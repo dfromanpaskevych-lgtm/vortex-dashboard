@@ -74,12 +74,19 @@ export const appRouter = router({
     trigger: publicProcedure
       .input(z.object({
         days: z.number().optional(),
+        dateFrom: z.number().optional(), // Unix timestamp (seconds)
+        dateTo: z.number().optional(),   // Unix timestamp (seconds)
       }).optional())
       .mutation(async ({ input }) => {
-        // Run sync in background — default 3 days
         const days = input?.days || 3;
-        syncOrders(days); // fire and forget
-        return { started: true, message: `Sync started for last ${days} days` };
+        const dateFrom = input?.dateFrom;
+        const dateTo = input?.dateTo;
+        // Fire and forget — runs day-by-day in background
+        syncOrders(days, dateFrom, dateTo);
+        const label = dateFrom && dateTo
+          ? `${new Date(dateFrom * 1000).toLocaleDateString("uk-UA")} — ${new Date(dateTo * 1000).toLocaleDateString("uk-UA")}`
+          : `останні ${days} дні`;
+        return { started: true, message: `Синхронізацію запущено: ${label}` };
       }),
 
     logs: publicProcedure.query(async () => {

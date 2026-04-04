@@ -58,3 +58,6 @@
 - [x] Disable auto-sync to prevent April data from being added automatically
 - [x] Deploy with public URL
 - [x] Add pagination controls to orders table (prev/next buttons, page numbers, page size selector)
+- [x] Rewrite syncService: day-by-day fetching with pauses (like load-march.mjs)
+- [x] Sync page: period selector (3/7/14/30 days + custom date range)
+- [x] tRPC sync.trigger: accept dateFrom/dateTo instead of just days count

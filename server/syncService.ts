@@ -250,10 +250,16 @@ function detectChanges(
 
 /**
  * Main sync function.
- * Fetches orders from Vortex API for the last N days (default 3).
- * Compares with existing data and logs all changes.
+ * Accepts either:
+ *   - days: number of days back from today (default 3)
+ *   - dateFrom / dateTo: explicit Unix timestamps (seconds)
+ * Fetches day-by-day with pauses to avoid overloading the Vortex API.
  */
-export async function syncOrders(days = 3): Promise<{ batchId: string; success: boolean; message: string }> {
+export async function syncOrders(
+  days = 3,
+  dateFrom?: number,
+  dateTo?: number
+): Promise<{ batchId: string; success: boolean; message: string }> {
   if (isSyncing) {
     return { batchId: "", success: false, message: "Sync already in progress" };
   }
@@ -279,13 +285,27 @@ export async function syncOrders(days = 3): Promise<{ batchId: string; success: 
   });
 
   try {
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - (days - 1)); // e.g., 3 days = today, yesterday, day before
+    let startDate: Date;
+    let endDate: Date;
 
-    console.log(`[Sync] Starting sync for ${days} days (${startDate.toISOString().slice(0, 10)} to ${endDate.toISOString().slice(0, 10)})`);
+    if (dateFrom && dateTo) {
+      // Custom range from explicit timestamps
+      startDate = new Date(dateFrom * 1000);
+      endDate = new Date(dateTo * 1000);
+    } else {
+      // Last N days
+      endDate = new Date();
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - (days - 1));
+    }
 
-    // Fetch from Vortex API
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999);
+
+    const rangeLabel = `${startDate.toISOString().slice(0, 10)} — ${endDate.toISOString().slice(0, 10)}`;
+    console.log(`[Sync] Starting sync: ${rangeLabel}`);
+
+    // Fetch from Vortex API day-by-day with pauses
     const fetchedOrders = await fetchOrdersByDateRange(startDate, endDate, (day, count) => {
       console.log(`[Sync] ${day}: ${count >= 0 ? count + " orders" : "FAILED"}`);
     });
