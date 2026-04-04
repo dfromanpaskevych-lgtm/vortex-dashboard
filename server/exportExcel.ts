@@ -43,6 +43,10 @@ export async function handleExcelExport(req: Request, res: Response) {
         itemCurrency: orderItems.currency,
         deliveryTime: orderItems.deliveryTime,
         realDeliveryTime: orderItems.realDeliveryTime,
+        supplierName: orderItems.supplierName,
+        supplierTotal: orderItems.supplierTotal,
+        supplierCurrency: orderItems.supplierCurrency,
+        rgTimestamp: orderItems.rgTimestamp,
       })
       .from(orders)
       .leftJoin(orderItems, eq(orders.vortexOrderId, orderItems.vortexOrderId))
@@ -122,9 +126,9 @@ export async function handleExcelExport(req: Request, res: Response) {
         phone,
         row.trackNumber || "—",
         formatDate(row.realDeliveryTime),
-        "—",  // Баланс постач. - не в API
-        "—",  // Валюта постач. - не в API
-        "—",  // Дата оплати накладної - не в API
+        row.supplierTotal ? Number(row.supplierTotal) : "—",
+        row.supplierCurrency ? row.supplierCurrency.toUpperCase() : "—",
+        formatDate(row.rgTimestamp),
       ]);
     }
 

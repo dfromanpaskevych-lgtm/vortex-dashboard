@@ -70,6 +70,12 @@ export const orderItems = mysqlTable("order_items", {
   clientNote: text("clientNote"),
   managerNote: text("managerNote"),
   returnPeriod: varchar("returnPeriod", { length: 10 }),
+  // RG (receipt/invoice) data from get_rg_list
+  supplierName: text("supplierName"),
+  supplierTotal: decimal("supplierTotal", { precision: 12, scale: 2 }),
+  supplierCurrency: varchar("supplierCurrency", { length: 10 }),
+  rgId: varchar("rgId", { length: 32 }),
+  rgTimestamp: bigint("rgTimestamp", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

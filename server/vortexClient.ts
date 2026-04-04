@@ -257,6 +257,87 @@ export async function fetchOrdersForDay(
 }
 
 /**
+ * Get RG list (receipts/invoices from suppliers) for a timestamp range.
+ * Returns array of RG entries with supplier info.
+ */
+export async function getRgList(
+  startTimestamp: number,
+  endTimestamp: number,
+  page = 0,
+  pageSize = 50
+): Promise<Array<Record<string, unknown>>> {
+  const result = await makeApiRequestWithRetry("get_rg_list", {
+    page,
+    page_size: pageSize,
+    with_items: true,
+    start_timestamp: startTimestamp,
+    end_timestamp: endTimestamp,
+  }) as Record<string, unknown>;
+
+  const items = result.items as Array<Record<string, unknown>> | undefined;
+  if (!items || !Array.isArray(items)) {
+    console.log(`[VortexAPI] get_rg_list: no items in response`);
+    return [];
+  }
+
+  console.log(`[VortexAPI] get_rg_list: received ${items.length} RG entries (page ${page})`);
+
+  // If next_page_exists, fetch more
+  const allItems = [...items];
+  if (result.next_page_exists) {
+    console.log(`[VortexAPI] get_rg_list: fetching next page...`);
+    await sleep(3000);
+    const nextItems = await getRgList(startTimestamp, endTimestamp, page + 1, pageSize);
+    allItems.push(...nextItems);
+  }
+
+  return allItems;
+}
+
+/**
+ * Fetch all RG entries for a date range, one day at a time.
+ */
+export async function fetchRgByDateRange(
+  startDate: Date,
+  endDate: Date
+): Promise<Array<Record<string, unknown>>> {
+  const allRg: Array<Record<string, unknown>> = [];
+  const current = new Date(startDate);
+  current.setHours(0, 0, 0, 0);
+
+  const endDay = new Date(endDate);
+  endDay.setHours(23, 59, 59, 999);
+
+  while (current <= endDay) {
+    const dayStart = new Date(current);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(current);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const startTs = Math.floor(dayStart.getTime() / 1000);
+    const endTs = Math.floor(dayEnd.getTime() / 1000);
+    const dayStr = current.toISOString().slice(0, 10);
+
+    try {
+      const rgEntries = await getRgList(startTs, endTs);
+      allRg.push(...rgEntries);
+      console.log(`[VortexAPI] RG for ${dayStr}: ${rgEntries.length} entries`);
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[VortexAPI] RG FAILED for ${dayStr}: ${errMsg}`);
+    }
+
+    current.setDate(current.getDate() + 1);
+    if (current <= endDay) {
+      await sleep(3000);
+    }
+  }
+
+  console.log(`[VortexAPI] Total RG entries: ${allRg.length}`);
+  return allRg;
+}
+
+/**
  * Fetch orders for the last N days, one day at a time.
  * Large pauses between days to avoid overloading the API.
  */

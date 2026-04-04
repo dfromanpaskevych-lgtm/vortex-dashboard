@@ -1,7 +1,7 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { getDb } from "./db";
 import { orders, orderItems, orderSnapshots, changeLogs, syncLogs } from "../drizzle/schema";
-import { fetchOrdersByDateRange } from "./vortexClient";
+import { fetchOrdersByDateRange, fetchRgByDateRange } from "./vortexClient";
 import { nanoid } from "nanoid";
 
 let isSyncing = false;
@@ -401,6 +401,65 @@ export async function syncOrders(days = 3): Promise<{ batchId: string; success: 
       });
     }
 
+    // ===== ENRICH WITH RG DATA (supplier info) =====
+    let rgEnriched = 0;
+    try {
+      console.log(`[Sync] Fetching RG (supplier receipt) data...`);
+      const rgEntries = await fetchRgByDateRange(startDate, endDate);
+      console.log(`[Sync] Got ${rgEntries.length} RG entries, matching to order items...`);
+
+      // Build a lookup: art_id+code+brand -> RG entry
+      for (const rg of rgEntries) {
+        const rgItems = (rg.items || []) as Array<Record<string, unknown>>;
+        const supplierName = [rg.sup_name || ""].join("").trim();
+        const rgId = String(rg.id || "");
+        const rgTimestamp = rg.timestamp ? Number(rg.timestamp) : null;
+        const rgCurrency = String(rg.currency || "uah");
+
+        for (const rgItem of rgItems) {
+          const artId = String(rgItem.art_id || "");
+          const code = String(rgItem.code || "");
+          const brand = String(rgItem.brand || "");
+          const supplierTotal = rgItem.price ? String(rgItem.price) : null;
+
+          if (!artId && !code) continue;
+
+          // Find matching order_items by code + brand
+          const matchConditions = [];
+          if (code) matchConditions.push(eq(orderItems.code, code));
+          if (brand) matchConditions.push(eq(orderItems.brandName, brand));
+
+          if (matchConditions.length === 0) continue;
+
+          const matchingItems = await db
+            .select({ id: orderItems.id, supplierName: orderItems.supplierName })
+            .from(orderItems)
+            .where(and(...matchConditions))
+            .limit(10);
+
+          for (const mi of matchingItems) {
+            // Only update if not already enriched
+            if (!mi.supplierName) {
+              await db
+                .update(orderItems)
+                .set({
+                  supplierName,
+                  supplierTotal,
+                  supplierCurrency: rgCurrency,
+                  rgId,
+                  rgTimestamp,
+                })
+                .where(eq(orderItems.id, mi.id));
+              rgEnriched++;
+            }
+          }
+        }
+      }
+      console.log(`[Sync] Enriched ${rgEnriched} items with supplier data`);
+    } catch (rgError) {
+      console.error(`[Sync] RG enrichment failed (non-critical):`, rgError);
+    }
+
     // Update sync log
     await db
       .update(syncLogs)
@@ -414,7 +473,7 @@ export async function syncOrders(days = 3): Promise<{ batchId: string; success: 
       })
       .where(eq(syncLogs.batchId, batchId));
 
-    const msg = `Synced ${fetchedOrders.length} orders (${newCount} new, ${modifiedCount} modified)`;
+    const msg = `Synced ${fetchedOrders.length} orders (${newCount} new, ${modifiedCount} modified, ${rgEnriched} items enriched with supplier data)`;
     console.log(`[Sync] Completed: ${msg}`);
     isSyncing = false;
     return { batchId, success: true, message: msg };

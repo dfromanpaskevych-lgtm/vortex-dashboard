@@ -149,9 +149,9 @@ export default function Orders() {
         phone: row.customerPhone && row.customerPhone.trim() !== "" ? row.customerPhone.trim() : "немає номеру",
         issueDoc: showText(row.trackNumber, "—"),
         issueDate: formatDate(row.realDeliveryTime),
-        supplierBalance: "—",
-        supplierCurrency: "—",
-        invoicePaymentDate: "—",
+        supplierBalance: formatPrice(row.supplierTotal),
+        supplierCurrency: row.supplierCurrency ? row.supplierCurrency.toUpperCase() : "\u2014",
+        invoicePaymentDate: formatDate(row.rgTimestamp),
       };
     });
   }, [rows]);

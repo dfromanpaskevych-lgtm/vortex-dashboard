@@ -41,3 +41,8 @@
 - [x] Orders table shows all 27 columns: real data where available, — where not in API
 - [x] Excel export updated with all fields, — for unavailable, немає номеру for empty phone
 - [x] Data already loaded with all available fields from API
+- [x] Check order 87749 after invoice closure: status complete, price 8500, real_delivery_time set
+- [x] Added get_rg_list integration: 127 RG entries fetched, 27 items enriched with supplier data
+- [x] New DB columns: supplierName, supplierTotal, supplierCurrency, rgId, rgTimestamp
+- [x] Order 87749 enriched: ALLPARTS САЙТ ВИГРУЗКА PL, 3200 UAH
+- [x] Change tracking confirmed: 10 changes logged for 87749 (status, price, basePrice transitions)
