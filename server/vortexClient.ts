@@ -1,14 +1,48 @@
 import crypto from "crypto";
-import axios from "axios";
+import http from "http";
 
 const API_KEY = "1bTaa9TePTzS85Nl0zL9ATcYyktNf7ta";
 const API_URL = "http://tz4.topaz.crm-vortex.com/front_api";
 
-function phpValueToString(value: unknown): string {
-  if (typeof value === "boolean") return value ? "1" : "";
-  if (Array.isArray(value) || (typeof value === "object" && value !== null))
-    return JSON.stringify(value);
-  return String(value ?? "");
+/**
+ * Low-level HTTP POST using Node's built-in http module.
+ * Each request creates a fresh connection (no keep-alive pooling)
+ * to avoid stale/broken connections with the slow Vortex API.
+ */
+function rawPost(url: string, body: string, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const options: http.RequestOptions = {
+      hostname: parsed.hostname,
+      port: parsed.port || 80,
+      path: parsed.pathname,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+      timeout: timeoutMs,
+      // No keep-alive — fresh connection every time
+      agent: false,
+    };
+
+    const req = http.request(options, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        const data = Buffer.concat(chunks).toString("utf-8");
+        resolve(data);
+      });
+      res.on("error", reject);
+    });
+
+    req.on("timeout", () => {
+      req.destroy(new Error(`Request timeout after ${timeoutMs}ms`));
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
 }
 
 function hashRequest(requestData: Record<string, unknown>, apiKey: string): string {
@@ -37,6 +71,14 @@ function hashRequest(requestData: Record<string, unknown>, apiKey: string): stri
   return crypto.createHash("sha1").update(joinedDataString, "utf-8").digest("hex");
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Make a single API request to Vortex.
+ * Uses raw HTTP (no axios) with fresh connections.
+ */
 async function makeApiRequest(
   method: string,
   methodData: Record<string, unknown>,
@@ -59,76 +101,164 @@ async function makeApiRequest(
   requestData.remote_address = "127.0.0.1";
   requestData.user_agent = "Mozilla/5.0 (Vortex Dashboard)";
 
-  const response = await axios.post(API_URL, requestData, {
-    timeout,
-    headers: { "Content-Type": "application/json" },
-  });
+  const body = JSON.stringify(requestData);
+  const responseText = await rawPost(API_URL, body, timeout);
 
-  return response.data;
+  try {
+    return JSON.parse(responseText);
+  } catch {
+    throw new Error(`Invalid JSON response: ${responseText.slice(0, 200)}`);
+  }
 }
 
+/**
+ * Make API request with aggressive retry strategy.
+ * - Up to 7 attempts
+ * - Increasing pauses between retries (3s, 5s, 8s, 12s, 18s, 25s)
+ * - 120s timeout per request
+ */
 async function makeApiRequestWithRetry(
   method: string,
   methodData: Record<string, unknown>,
-  maxRetries = 5,
+  maxRetries = 7,
   timeout = 120000
 ): Promise<unknown> {
+  const retryDelays = [3000, 5000, 8000, 12000, 18000, 25000, 30000];
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
+      console.log(`[VortexAPI] ${method} attempt ${attempt + 1}/${maxRetries}...`);
       const result = await makeApiRequest(method, methodData, timeout);
       return result;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.warn(`[VortexAPI] ${method} attempt ${attempt + 1}/${maxRetries} failed: ${errMsg}`);
+      console.warn(`[VortexAPI] ${method} attempt ${attempt + 1}/${maxRetries} FAILED: ${errMsg}`);
+
       if (attempt < maxRetries - 1) {
-        const waitTime = (1 + attempt * 1.5) * 1000;
-        await new Promise((r) => setTimeout(r, waitTime));
+        const waitTime = retryDelays[attempt] || 30000;
+        console.log(`[VortexAPI] Waiting ${waitTime / 1000}s before retry...`);
+        await sleep(waitTime);
       }
     }
   }
   throw new Error(`[VortexAPI] ${method} failed after ${maxRetries} attempts`);
 }
 
+/**
+ * Get orders for a specific timestamp range.
+ */
 export async function getOrders(
   startTimestamp: number,
-  endTimestamp: number,
-  clientId?: string
+  endTimestamp: number
 ): Promise<Record<string, unknown>> {
-  const data: Record<string, unknown> = {
+  const result = await makeApiRequestWithRetry("get_orders", {
     start_timestamp: startTimestamp,
     end_timestamp: endTimestamp,
-  };
-  if (clientId) data.client_id = clientId;
-  const result = await makeApiRequestWithRetry("get_orders", data);
+  });
   return result as Record<string, unknown>;
 }
 
+/**
+ * Get a single order by ID.
+ */
 export async function getOrderById(orderId: string): Promise<Record<string, unknown>> {
   const result = await makeApiRequestWithRetry("get_order_by_id", { order_id: orderId });
   return result as Record<string, unknown>;
 }
 
-export async function getRgList(
-  page = 0,
-  pageSize = 50,
-  withItems = true,
-  startTimestamp?: number,
-  endTimestamp?: number
-): Promise<Record<string, unknown>> {
-  const data: Record<string, unknown> = {
-    page,
-    page_size: pageSize,
-    with_items: withItems,
-  };
-  if (startTimestamp !== undefined) data.start_timestamp = startTimestamp;
-  if (endTimestamp !== undefined) data.end_timestamp = endTimestamp;
-  const result = await makeApiRequestWithRetry("get_rg_list", data);
-  return result as Record<string, unknown>;
+/**
+ * Validate that an order record has the minimum required fields.
+ */
+function validateOrder(order: Record<string, unknown>, orderId: string): boolean {
+  // Must have an ID
+  if (!orderId) {
+    console.warn(`[Validate] Order skipped: no ID`);
+    return false;
+  }
+
+  // Must have created timestamp
+  const created = order.created;
+  if (!created || Number(created) === 0) {
+    console.warn(`[Validate] Order ${orderId} skipped: no created timestamp`);
+    return false;
+  }
+
+  // Must have client_name or client_id
+  if (!order.client_name && !order.client_id) {
+    console.warn(`[Validate] Order ${orderId} skipped: no client info`);
+    return false;
+  }
+
+  return true;
 }
 
 /**
- * Fetch orders day-by-day for a date range.
- * This avoids timeouts by making smaller requests.
+ * Validate that an item record has the minimum required fields.
+ */
+function validateItem(item: Record<string, unknown>, orderId: string): boolean {
+  if (!item.order_item_id && !item.code) {
+    console.warn(`[Validate] Item in order ${orderId} skipped: no item_id or code`);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Fetch orders for exactly ONE day.
+ * Returns validated, clean order records.
+ */
+export async function fetchOrdersForDay(
+  date: Date
+): Promise<Array<Record<string, unknown>>> {
+  const dayStart = new Date(date);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(date);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const startTs = Math.floor(dayStart.getTime() / 1000);
+  const endTs = Math.floor(dayEnd.getTime() / 1000);
+
+  const dayStr = date.toISOString().slice(0, 10);
+  console.log(`[VortexAPI] Fetching orders for ${dayStr} (ts: ${startTs}-${endTs})`);
+
+  const result = await getOrders(startTs, endTs);
+  const ordersMap = result.orders as Record<string, unknown> | undefined;
+
+  if (!ordersMap || typeof ordersMap !== "object") {
+    console.log(`[VortexAPI] ${dayStr}: no orders in response`);
+    return [];
+  }
+
+  const entries = Object.entries(ordersMap);
+  console.log(`[VortexAPI] ${dayStr}: received ${entries.length} raw orders`);
+
+  // Validate each order
+  const validOrders: Array<Record<string, unknown>> = [];
+  for (const [orderId, orderData] of entries) {
+    const order = orderData as Record<string, unknown>;
+    order.order_id = orderId;
+
+    if (validateOrder(order, orderId)) {
+      // Validate items
+      const items = (order.items || []) as Array<Record<string, unknown>>;
+      const validItems = items.filter((item) => validateItem(item, orderId));
+      order.items = validItems;
+
+      if (items.length !== validItems.length) {
+        console.warn(`[Validate] Order ${orderId}: ${items.length - validItems.length} invalid items removed`);
+      }
+
+      validOrders.push(order);
+    }
+  }
+
+  console.log(`[VortexAPI] ${dayStr}: ${validOrders.length} valid orders (${entries.length - validOrders.length} rejected)`);
+  return validOrders;
+}
+
+/**
+ * Fetch orders for the last N days, one day at a time.
+ * Large pauses between days to avoid overloading the API.
  */
 export async function fetchOrdersByDateRange(
   startDate: Date,
@@ -139,36 +269,35 @@ export async function fetchOrdersByDateRange(
   const current = new Date(startDate);
   current.setHours(0, 0, 0, 0);
 
-  while (current <= endDate) {
-    const dayStart = Math.floor(current.getTime() / 1000);
-    const dayEnd = dayStart + 86399; // end of day
+  const endDay = new Date(endDate);
+  endDay.setHours(23, 59, 59, 999);
 
+  let dayIndex = 0;
+
+  while (current <= endDay) {
     const dayStr = current.toISOString().slice(0, 10);
 
     try {
-      const result = await getOrders(dayStart, dayEnd);
-      const ordersMap = (result as Record<string, unknown>).orders as Record<string, unknown> | undefined;
-
-      if (ordersMap && typeof ordersMap === "object") {
-        const entries = Object.entries(ordersMap);
-        for (const [orderId, orderData] of entries) {
-          const order = orderData as Record<string, unknown>;
-          order.order_id = orderId;
-          allOrders.push(order);
-        }
-        onProgress?.(dayStr, entries.length);
-      } else {
-        onProgress?.(dayStr, 0);
-      }
+      const dayOrders = await fetchOrdersForDay(new Date(current));
+      allOrders.push(...dayOrders);
+      onProgress?.(dayStr, dayOrders.length);
     } catch (error) {
-      console.error(`[VortexAPI] Failed to fetch orders for ${dayStr}:`, error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[VortexAPI] FAILED to fetch ${dayStr}: ${errMsg}`);
       onProgress?.(dayStr, -1);
     }
 
-    // Pause between requests to avoid overloading the API
-    await new Promise((r) => setTimeout(r, 2000));
+    // Move to next day
     current.setDate(current.getDate() + 1);
+    dayIndex++;
+
+    // Large pause between days (5 seconds) to let the API breathe
+    if (current <= endDay) {
+      console.log(`[VortexAPI] Pausing 5s before next day...`);
+      await sleep(5000);
+    }
   }
 
+  console.log(`[VortexAPI] Total: ${allOrders.length} valid orders from ${dayIndex} days`);
   return allOrders;
 }

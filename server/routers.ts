@@ -4,7 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList } from "./db";
-import { syncOrders, getSyncStatus, seedFromJson, startScheduledSync } from "./syncService";
+import { syncOrders, getSyncStatus, startScheduledSync } from "./syncService";
 
 // Start scheduled sync on server boot
 startScheduledSync();
@@ -76,31 +76,14 @@ export const appRouter = router({
         days: z.number().optional(),
       }).optional())
       .mutation(async ({ input }) => {
-        // Run sync in background
-        const days = input?.days || 7;
-        const result = syncOrders(days);
+        // Run sync in background — default 3 days
+        const days = input?.days || 3;
+        syncOrders(days); // fire and forget
         return { started: true, message: `Sync started for last ${days} days` };
       }),
 
     logs: publicProcedure.query(async () => {
       return getSyncLogsList();
-    }),
-
-    seed: publicProcedure.mutation(async () => {
-      // Seed from the uploaded JSON file
-      try {
-        const fs = await import("fs");
-        const path = "/home/ubuntu/upload/orders_complete.json";
-        if (!fs.existsSync(path)) {
-          return { success: false, message: "Seed file not found" };
-        }
-        const data = JSON.parse(fs.readFileSync(path, "utf-8"));
-        const count = await seedFromJson(data);
-        return { success: true, message: `Seeded ${count} orders`, count };
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        return { success: false, message: msg };
-      }
     }),
   }),
 });

@@ -20,3 +20,10 @@
 - [x] Responsive/mobile-friendly UI
 - [x] Vitest tests for backend
 - [ ] Deploy with public URL
+- [x] Clear all bad data from database
+- [x] Rewrite data fetching: only last 3 days, 1 day at a time, small batches (3-5 items per request)
+- [x] Add aggressive retry with large pauses between requests
+- [x] Validate every record for completeness and correctness
+- [x] Update syncService to use reliable fetching strategy
+- [x] Fix change tracking to properly detect modifications
+- [x] Verify dashboard shows clean correct data

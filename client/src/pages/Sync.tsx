@@ -26,22 +26,7 @@ export default function Sync() {
       utils.sync.status.invalidate();
       utils.sync.logs.invalidate();
     },
-    onError: (err) => {
-      toast.error("Помилка: " + err.message);
-    },
-  });
-
-  const seedData = trpc.sync.seed.useMutation({
-    onSuccess: (data) => {
-      if (data.success) {
-        toast.success(data.message);
-        utils.orders.list.invalidate();
-        utils.dashboard.metrics.invalidate();
-      } else {
-        toast.error(data.message);
-      }
-    },
-    onError: (err) => {
+    onError: (err: { message: string }) => {
       toast.error("Помилка: " + err.message);
     },
   });
@@ -112,7 +97,7 @@ export default function Sync() {
           <CardContent className="space-y-3">
             <Button
               className="w-full"
-              onClick={() => triggerSync.mutate({ days: 7 })}
+              onClick={() => triggerSync.mutate({ days: 3 })}
               disabled={syncStatus?.isSyncing || triggerSync.isPending}
             >
               {triggerSync.isPending ? (
@@ -120,32 +105,11 @@ export default function Sync() {
               ) : (
                 <RefreshCw className="h-4 w-4 mr-2" />
               )}
-              Синхронізувати (7 днів)
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => triggerSync.mutate({ days: 3 })}
-              disabled={syncStatus?.isSyncing || triggerSync.isPending}
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Швидка синхронізація (3 дні)
-            </Button>
-            <Button
-              variant="secondary"
-              className="w-full"
-              onClick={() => seedData.mutate()}
-              disabled={seedData.isPending}
-            >
-              {seedData.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Database className="h-4 w-4 mr-2" />
-              )}
-              Завантажити початкові дані
+              Синхронізувати з Vortex (3 дні)
             </Button>
             <p className="text-xs text-muted-foreground">
-              Автоматична синхронізація: кожні 30 хвилин (останні 3 дні)
+              Автоматична синхронізація: кожні 30 хвилин (останні 3 дні).
+              Дані завантажуються по 1 дню за раз з великими паузами між запитами.
             </p>
           </CardContent>
         </Card>
@@ -189,10 +153,10 @@ export default function Sync() {
                   </TableCell>
                 </TableRow>
               ) : (
-                syncLogs.map((log: any) => (
-                  <TableRow key={log.id} className="hover:bg-muted/30 transition-colors">
+                syncLogs.map((log: Record<string, unknown>) => (
+                  <TableRow key={String(log.id)} className="hover:bg-muted/30 transition-colors">
                     <TableCell className="text-xs whitespace-nowrap">
-                      {new Date(log.startedAt).toLocaleString("uk-UA")}
+                      {new Date(log.startedAt as string).toLocaleString("uk-UA")}
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -211,11 +175,11 @@ export default function Sync() {
                         )}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs text-right font-mono">{log.ordersProcessed || 0}</TableCell>
-                    <TableCell className="text-xs text-right font-mono text-green-500">{log.newOrders || 0}</TableCell>
-                    <TableCell className="text-xs text-right font-mono text-yellow-500">{log.modifiedOrders || 0}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]" title={log.errorMessage || ""}>
-                      {log.errorMessage || "-"}
+                    <TableCell className="text-xs text-right font-mono">{String(log.ordersProcessed || 0)}</TableCell>
+                    <TableCell className="text-xs text-right font-mono text-green-500">{String(log.newOrders || 0)}</TableCell>
+                    <TableCell className="text-xs text-right font-mono text-yellow-500">{String(log.modifiedOrders || 0)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]" title={String(log.errorMessage || "")}>
+                      {String(log.errorMessage || "-")}
                     </TableCell>
                   </TableRow>
                 ))
