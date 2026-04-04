@@ -4,7 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList } from "./db";
-import { syncOrders, getSyncStatus, startScheduledSync } from "./syncService";
+import { syncOrders, getSyncStatus, startScheduledSync, enrichBalances, getIsEnrichingBalances } from "./syncService";
 
 // Scheduled sync disabled — data loaded manually via load-march.mjs
 // startScheduledSync();
@@ -91,6 +91,19 @@ export const appRouter = router({
 
     logs: publicProcedure.query(async () => {
       return getSyncLogsList();
+    }),
+
+    enrichBalances: publicProcedure
+      .input(z.object({ limit: z.number().optional() }).optional())
+      .mutation(async ({ input }) => {
+        const limit = input?.limit || 200;
+        // Fire and forget
+        enrichBalances(limit);
+        return { started: true, message: `Збагачення балансами запущено (макс. ${limit} замовлень)` };
+      }),
+
+    balanceStatus: publicProcedure.query(() => {
+      return { isEnriching: getIsEnrichingBalances() };
     }),
   }),
 });

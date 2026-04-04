@@ -61,3 +61,9 @@
 - [x] Rewrite syncService: day-by-day fetching with pauses (like load-march.mjs)
 - [x] Sync page: period selector (3/7/14/30 days + custom date range)
 - [x] tRPC sync.trigger: accept dateFrom/dateTo instead of just days count
+- [x] Fix: reset stale 'running' sync logs to 'failed' on server startup
+- [x] Fix: remove balance enrichment from sync (too slow, causes hangs) — do it separately
+- [x] Remove balance enrichment (get_order_by_id) from syncOrders
+- [x] Add separate enrichBalances() function in syncService
+- [x] Add tRPC sync.enrichBalances procedure
+- [x] Add 'Збагатити балансами' button to Sync page UI

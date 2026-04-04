@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import {
   RefreshCw, CheckCircle2, XCircle, Loader2, Clock, Database,
-  CalendarDays, ChevronDown
+  CalendarDays, ChevronDown, Coins
 } from "lucide-react";
 import { toast } from "sonner";
 import type { DateRange } from "react-day-picker";
@@ -54,6 +54,9 @@ export default function Sync() {
   const { data: syncStatus } = trpc.sync.status.useQuery(undefined, {
     refetchInterval: 3000,
   });
+  const { data: balanceStatus } = trpc.sync.balanceStatus.useQuery(undefined, {
+    refetchInterval: 5000,
+  });
   const { data: syncLogs, isLoading: logsLoading } = trpc.sync.logs.useQuery();
 
   const triggerSync = trpc.sync.trigger.useMutation({
@@ -61,6 +64,16 @@ export default function Sync() {
       toast.success(data.message || "Синхронізацію запущено");
       utils.sync.status.invalidate();
       utils.sync.logs.invalidate();
+    },
+    onError: (err: { message: string }) => {
+      toast.error("Помилка: " + err.message);
+    },
+  });
+
+  const triggerEnrichBalances = trpc.sync.enrichBalances.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message || "Збагачення балансами запущено");
+      utils.sync.balanceStatus.invalidate();
     },
     onError: (err: { message: string }) => {
       toast.error("Помилка: " + err.message);
@@ -113,6 +126,9 @@ export default function Sync() {
     }
   };
 
+  const isSyncing = syncStatus?.isSyncing || triggerSync.isPending;
+  const isEnriching = balanceStatus?.isEnriching || triggerEnrichBalances.isPending;
+
   return (
     <div className="space-y-6">
       <div>
@@ -122,7 +138,7 @@ export default function Sync() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Status card */}
         <Card>
           <CardHeader className="pb-3">
@@ -134,10 +150,20 @@ export default function Sync() {
           <CardContent>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Статус:</span>
-                <Badge variant={syncStatus?.isSyncing ? "default" : "secondary"}>
-                  {syncStatus?.isSyncing ? (
-                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Синхронізація...</>
+                <span className="text-sm text-muted-foreground">Синхронізація:</span>
+                <Badge variant={isSyncing ? "default" : "secondary"}>
+                  {isSyncing ? (
+                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> В процесі...</>
+                  ) : (
+                    <><CheckCircle2 className="h-3 w-3 mr-1" /> Готово</>
+                  )}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Баланси:</span>
+                <Badge variant={isEnriching ? "default" : "secondary"}>
+                  {isEnriching ? (
+                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Збагачення...</>
                   ) : (
                     <><CheckCircle2 className="h-3 w-3 mr-1" /> Готово</>
                   )}
@@ -146,14 +172,14 @@ export default function Sync() {
               {syncStatus?.lastSync && (
                 <>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Остання синхронізація:</span>
-                    <span className="text-sm">
+                    <span className="text-sm text-muted-foreground">Остання синхр.:</span>
+                    <span className="text-xs">
                       {new Date(syncStatus.lastSync.startedAt).toLocaleString("uk-UA")}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Результат:</span>
-                    <Badge variant={syncStatus.lastSync.status === "completed" ? "default" : syncStatus.lastSync.status === "failed" ? "destructive" : "secondary"}>
+                    <Badge variant={syncStatus.lastSync.status === "completed" ? "default" : syncStatus.lastSync.status === "failed" ? "destructive" : "secondary"} className="text-[10px]">
                       {syncStatus.lastSync.status === "completed" ? "Успішно"
                         : syncStatus.lastSync.status === "failed" ? "Помилка"
                         : "В процесі"}
@@ -161,8 +187,8 @@ export default function Sync() {
                   </div>
                   {syncStatus.lastSync.ordersProcessed != null && (
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Оброблено замовлень:</span>
-                      <span className="text-sm font-mono">{syncStatus.lastSync.ordersProcessed}</span>
+                      <span className="text-sm text-muted-foreground">Оброблено:</span>
+                      <span className="text-sm font-mono">{syncStatus.lastSync.ordersProcessed} замовлень</span>
                     </div>
                   )}
                 </>
@@ -176,7 +202,7 @@ export default function Sync() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <RefreshCw className="h-4 w-4" />
-              Запустити синхронізацію
+              Синхронізація замовлень
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -191,7 +217,7 @@ export default function Sync() {
                     size="sm"
                     className="justify-start text-xs"
                     onClick={() => handlePresetClick(preset.days)}
-                    disabled={syncStatus?.isSyncing}
+                    disabled={isSyncing}
                   >
                     <CalendarDays className="h-3 w-3 mr-1.5" />
                     {preset.label}
@@ -202,14 +228,14 @@ export default function Sync() {
 
             {/* Custom date range */}
             <div>
-              <p className="text-xs text-muted-foreground mb-2 font-medium">Або оберіть власний діапазон:</p>
+              <p className="text-xs text-muted-foreground mb-2 font-medium">Або власний діапазон:</p>
               <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant={selectedPreset === null && customRange?.from ? "default" : "outline"}
                     size="sm"
                     className="w-full justify-between text-xs"
-                    disabled={syncStatus?.isSyncing}
+                    disabled={isSyncing}
                   >
                     <span className="flex items-center gap-1.5">
                       <CalendarDays className="h-3 w-3" />
@@ -243,20 +269,53 @@ export default function Sync() {
             <Button
               className="w-full"
               onClick={handleSync}
-              disabled={syncStatus?.isSyncing || triggerSync.isPending || !canSync}
+              disabled={isSyncing || !canSync}
             >
-              {syncStatus?.isSyncing || triggerSync.isPending ? (
+              {isSyncing ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <RefreshCw className="h-4 w-4 mr-2" />
               )}
-              {syncStatus?.isSyncing
+              {isSyncing
                 ? "Синхронізація в процесі..."
                 : `Синхронізувати: ${getSyncLabel()}`}
             </Button>
+          </CardContent>
+        </Card>
 
+        {/* Balance enrichment card */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Coins className="h-4 w-4" />
+              Збагачення балансами
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Завантажує поточний баланс для замовлень, у яких він ще не заповнений. Виконується по 200 замовлень за раз з паузами між запитами.
+            </p>
+            <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+              <p>⏱ Орієнтовний час: ~7 хв на 200 замовлень</p>
+              <p>⚠️ Не блокує синхронізацію — працює паралельно</p>
+            </div>
+            <Button
+              className="w-full"
+              variant="outline"
+              onClick={() => triggerEnrichBalances.mutate({ limit: 200 })}
+              disabled={isEnriching}
+            >
+              {isEnriching ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Coins className="h-4 w-4 mr-2" />
+              )}
+              {isEnriching
+                ? "Збагачення в процесі..."
+                : "Збагатити балансами (200 замовлень)"}
+            </Button>
             <p className="text-xs text-muted-foreground">
-              Дані завантажуються по 1 дню за раз з паузами між запитами, щоб не перевантажувати API Vortex.
+              Запускайте кілька разів, поки всі замовлення не отримають баланс.
             </p>
           </CardContent>
         </Card>

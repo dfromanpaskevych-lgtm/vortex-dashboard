@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, isNull } from "drizzle-orm";
 import { getDb } from "./db";
 import { orders, orderItems, orderSnapshots, changeLogs, syncLogs } from "../drizzle/schema";
 import { fetchOrdersByDateRange, fetchRgByDateRange, getOrderById } from "./vortexClient";
@@ -421,46 +421,8 @@ export async function syncOrders(
       });
     }
 
-    // ===== ENRICH WITH get_order_by_id (balance data) =====
-    let balanceEnriched = 0;
-    try {
-      console.log(`[Sync] Enriching orders with balance data from get_order_by_id...`);
-      const allOrderIds = fetchedOrders.map(o => String(o.order_id || o.id || "")).filter(Boolean);
-      
-      for (let i = 0; i < allOrderIds.length; i++) {
-        const oid = allOrderIds[i];
-        try {
-          const detail = await getOrderById(oid);
-          if (detail && typeof detail === 'object') {
-            const balanceCurrencyTotal = detail.balance_currency_total != null ? String(detail.balance_currency_total) : null;
-            const balanceCurrency = detail.balance_currency ? String(detail.balance_currency) : null;
-            
-            if (balanceCurrencyTotal || balanceCurrency) {
-              await db
-                .update(orders)
-                .set({
-                  balanceCurrencyTotal,
-                  balanceCurrency,
-                })
-                .where(eq(orders.vortexOrderId, oid));
-              balanceEnriched++;
-            }
-          }
-        } catch (detailErr) {
-          console.warn(`[Sync] get_order_by_id failed for ${oid}: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}`);
-        }
-        
-        // Pause between detail requests to avoid overloading API
-        if (i < allOrderIds.length - 1) {
-          await new Promise(r => setTimeout(r, 2000));
-        }
-      }
-      console.log(`[Sync] Enriched ${balanceEnriched}/${allOrderIds.length} orders with balance data`);
-    } catch (balanceError) {
-      console.error(`[Sync] Balance enrichment failed (non-critical):`, balanceError);
-    }
-
     // ===== ENRICH WITH RG DATA (supplier info) =====
+    // NOTE: Balance enrichment (get_order_by_id) is done separately via enrichBalances()
     let rgEnriched = 0;
     try {
       console.log(`[Sync] Fetching RG (supplier receipt) data...`);
@@ -532,7 +494,7 @@ export async function syncOrders(
       })
       .where(eq(syncLogs.batchId, batchId));
 
-    const msg = `Synced ${fetchedOrders.length} orders (${newCount} new, ${modifiedCount} modified, ${balanceEnriched} with balance, ${rgEnriched} items enriched with supplier data)`;
+    const msg = `Synced ${fetchedOrders.length} orders (${newCount} new, ${modifiedCount} modified, ${rgEnriched} items enriched with supplier data)`;
     console.log(`[Sync] Completed: ${msg}`);
     isSyncing = false;
     return { batchId, success: true, message: msg };
@@ -576,5 +538,101 @@ export function stopScheduledSync() {
     clearInterval(syncInterval);
     syncInterval = null;
     console.log("[Sync] Scheduled sync stopped");
+  }
+}
+
+/**
+ * Separate balance enrichment: fetches get_order_by_id for orders that have no balance yet.
+ * Runs independently from syncOrders to avoid blocking normal syncs.
+ * @param limit max number of orders to enrich in one run (default 200)
+ */
+let isEnrichingBalances = false;
+
+export async function enrichBalances(limit = 200): Promise<{ success: boolean; message: string; enriched: number }> {
+  if (isEnrichingBalances) {
+    return { success: false, message: "Balance enrichment already in progress", enriched: 0 };
+  }
+  isEnrichingBalances = true;
+  const db = await getDb();
+  if (!db) {
+    isEnrichingBalances = false;
+    return { success: false, message: "Database not available", enriched: 0 };
+  }
+
+  try {
+    // Find orders without balance data
+    const toEnrich = await db
+      .select({ id: orders.id, vortexOrderId: orders.vortexOrderId })
+      .from(orders)
+      .where(isNull(orders.balanceCurrencyTotal))
+      .limit(limit);
+
+    console.log(`[Balance] Found ${toEnrich.length} orders without balance data (limit ${limit})`);
+    let enriched = 0;
+
+    for (let i = 0; i < toEnrich.length; i++) {
+      const { vortexOrderId } = toEnrich[i];
+      try {
+        const detail = await getOrderById(vortexOrderId);
+        if (detail && typeof detail === "object") {
+          const balanceCurrencyTotal = detail.balance_currency_total != null ? String(detail.balance_currency_total) : null;
+          const balanceCurrency = detail.balance_currency ? String(detail.balance_currency) : null;
+          if (balanceCurrencyTotal !== null || balanceCurrency !== null) {
+            await db
+              .update(orders)
+              .set({ balanceCurrencyTotal, balanceCurrency })
+              .where(eq(orders.vortexOrderId, vortexOrderId));
+            enriched++;
+          }
+        }
+      } catch (err) {
+        console.warn(`[Balance] Failed for ${vortexOrderId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      // 2s pause between requests
+      if (i < toEnrich.length - 1) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    const msg = `Збагачено балансами ${enriched} з ${toEnrich.length} замовлень`;
+    console.log(`[Balance] ${msg}`);
+    isEnrichingBalances = false;
+    return { success: true, message: msg, enriched };
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[Balance] Failed:`, errMsg);
+    isEnrichingBalances = false;
+    return { success: false, message: errMsg, enriched: 0 };
+  }
+}
+
+export function getIsEnrichingBalances() {
+  return isEnrichingBalances;
+}
+
+/**
+ * On server startup, reset any sync logs stuck in 'running' state
+ * (from a previous server instance that was killed mid-sync).
+ */
+export async function resetStaleSyncLogs(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const { eq } = await import("drizzle-orm");
+  const staleResult = await db
+    .update(syncLogs)
+    .set({
+      status: "failed",
+      errorMessage: "Server restarted while sync was running",
+      completedAt: new Date(),
+    })
+    .where(eq(syncLogs.status, "running"));
+
+  // Reset the in-memory flag too
+  isSyncing = false;
+
+  const affected = (staleResult as unknown as { affectedRows?: number }[])?.[0]?.affectedRows ?? 0;
+  if (affected > 0) {
+    console.log(`[Startup] Reset ${affected} stale sync log(s) from 'running' to 'failed'`);
   }
 }

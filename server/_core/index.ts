@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleExcelExport } from "../exportExcel";
+import { resetStaleSyncLogs } from "../syncService";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -58,6 +59,13 @@ async function startServer() {
 
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+  }
+
+  // Reset any stale 'running' sync logs from previous server instances
+  try {
+    await resetStaleSyncLogs();
+  } catch (e) {
+    console.warn("[Startup] Could not reset stale sync logs:", e);
   }
 
   server.listen(port, () => {
