@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `change_logs` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`vortexOrderId` varchar(32) NOT NULL,\n\t`changeType` enum('new','modified','deleted') NOT NULL,\n\t`fieldName` varchar(100),\n\t`oldValue` text,\n\t`newValue` text,\n\t`syncBatchId` varchar(64) NOT NULL,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `change_logs_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QyitGcsGrQwmi4r.root --database bZNvb2BP2LdsJjKJRBspoz --execute CREATE TABLE `change_logs` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`vortexOrderId` varchar(32) NOT NULL,\n\t`changeType` enum('new','modified','deleted') NOT NULL,\n\t`fieldName` varchar(100),\n\t`oldValue` text,\n\t`newValue` text,\n\t`syncBatchId` varchar(64) NOT NULL,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `change_logs_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 160
+}

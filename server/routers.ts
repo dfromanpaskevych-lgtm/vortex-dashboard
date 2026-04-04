@@ -2,27 +2,107 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import { z } from "zod";
+import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList } from "./db";
+import { syncOrders, getSyncStatus, seedFromJson, startScheduledSync } from "./syncService";
+
+// Start scheduled sync on server boot
+startScheduledSync();
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      return { success: true } as const;
     }),
   }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  orders: router({
+    list: publicProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        manager: z.string().optional(),
+        status: z.string().optional(),
+        brand: z.string().optional(),
+        client: z.string().optional(),
+        dateFrom: z.number().optional(),
+        dateTo: z.number().optional(),
+        sortField: z.string().optional(),
+        sortDir: z.enum(["asc", "desc"]).optional(),
+        page: z.number().optional(),
+        pageSize: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return getOrdersList(input || {});
+      }),
+
+    filterOptions: publicProcedure.query(async () => {
+      return getFilterOptions();
+    }),
+  }),
+
+  dashboard: router({
+    metrics: publicProcedure.query(async () => {
+      return getDashboardMetrics();
+    }),
+  }),
+
+  changes: router({
+    list: publicProcedure
+      .input(z.object({
+        page: z.number().optional(),
+        pageSize: z.number().optional(),
+        changeType: z.string().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return getChangeLogs(
+          input?.page || 1,
+          input?.pageSize || 50,
+          input?.changeType
+        );
+      }),
+  }),
+
+  sync: router({
+    status: publicProcedure.query(async () => {
+      return getSyncStatus();
+    }),
+
+    trigger: publicProcedure
+      .input(z.object({
+        days: z.number().optional(),
+      }).optional())
+      .mutation(async ({ input }) => {
+        // Run sync in background
+        const days = input?.days || 7;
+        const result = syncOrders(days);
+        return { started: true, message: `Sync started for last ${days} days` };
+      }),
+
+    logs: publicProcedure.query(async () => {
+      return getSyncLogsList();
+    }),
+
+    seed: publicProcedure.mutation(async () => {
+      // Seed from the uploaded JSON file
+      try {
+        const fs = await import("fs");
+        const path = "/home/ubuntu/upload/orders_complete.json";
+        if (!fs.existsSync(path)) {
+          return { success: false, message: "Seed file not found" };
+        }
+        const data = JSON.parse(fs.readFileSync(path, "utf-8"));
+        const count = await seedFromJson(data);
+        return { success: true, message: `Seeded ${count} orders`, count };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return { success: false, message: msg };
+      }
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

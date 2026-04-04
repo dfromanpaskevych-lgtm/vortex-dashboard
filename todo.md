@@ -1,0 +1,22 @@
+# Vortex ERP Dashboard - TODO
+
+- [x] Database schema: orders, order_items, order_snapshots, sync_log tables
+- [x] Vortex API client (Node.js) with retry strategy, 120s timeouts, day-by-day fetching
+- [x] tRPC routers: orders list with pagination, filters, sorting, search
+- [x] tRPC routers: dashboard metrics (totals, by manager, by day, by status)
+- [x] tRPC routers: change tracking (new, modified, deleted orders)
+- [x] tRPC routers: sync trigger and sync status
+- [x] Scheduled job: auto-sync every 30 minutes
+- [x] Seed initial data from orders_complete.json
+- [x] DashboardLayout with sidebar navigation (Ukrainian labels)
+- [x] Orders table page with 27 columns
+- [x] Filters: manager, status, date range, client, brand (combinable)
+- [x] Sorting by any column (asc/desc)
+- [x] Global search across all fields
+- [x] Dashboard page with metrics cards and charts (Recharts)
+- [x] Change tracking page showing new/modified/deleted orders
+- [x] Export to Excel with all 27 columns
+- [x] Dark theme design
+- [x] Responsive/mobile-friendly UI
+- [x] Vitest tests for backend
+- [ ] Deploy with public URL

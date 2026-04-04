@@ -1,17 +1,7 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, bigint, json, boolean } from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -25,4 +15,103 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// Orders from Vortex ERP
+export const orders = mysqlTable("orders", {
+  id: int("id").autoincrement().primaryKey(),
+  vortexOrderId: varchar("vortexOrderId", { length: 32 }).notNull().unique(),
+  clientId: varchar("clientId", { length: 32 }),
+  clientName: text("clientName"),
+  managerName: text("managerName"),
+  currency: varchar("currency", { length: 10 }),
+  clientNote: text("clientNote"),
+  managerNote: text("managerNote"),
+  sumUah: decimal("sumUah", { precision: 12, scale: 2 }),
+  sumUsd: decimal("sumUsd", { precision: 12, scale: 2 }),
+  sumEur: decimal("sumEur", { precision: 12, scale: 2 }),
+  deliveryProvider: varchar("deliveryProvider", { length: 100 }),
+  deliveryName: text("deliveryName"),
+  customerPhone: varchar("customerPhone", { length: 30 }),
+  trackNumber: varchar("trackNumber", { length: 64 }),
+  cityName: varchar("cityName", { length: 100 }),
+  instanceName: text("instanceName"),
+  paymentName: varchar("paymentName", { length: 100 }),
+  codAmount: decimal("codAmount", { precision: 12, scale: 2 }),
+  codCurrency: varchar("codCurrency", { length: 10 }),
+  rawJson: json("rawJson"),
+  createdTs: bigint("createdTs", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  syncedAt: timestamp("syncedAt").defaultNow().notNull(),
+});
+
+export type Order = typeof orders.$inferSelect;
+
+// Order items (line items within orders)
+export const orderItems = mysqlTable("order_items", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  vortexOrderId: varchar("vortexOrderId", { length: 32 }).notNull(),
+  orderItemId: varchar("orderItemId", { length: 32 }),
+  code: varchar("code", { length: 100 }),
+  brandName: varchar("brandName", { length: 100 }),
+  description: text("description"),
+  status: varchar("status", { length: 30 }),
+  whName: text("whName"),
+  whId: varchar("whId", { length: 20 }),
+  qty: int("qty"),
+  price: decimal("price", { precision: 12, scale: 2 }),
+  basePrice: decimal("basePrice", { precision: 12, scale: 2 }),
+  basePriceCurrency: varchar("basePriceCurrency", { length: 10 }),
+  retailPrice: decimal("retailPrice", { precision: 12, scale: 2 }),
+  currency: varchar("currency", { length: 10 }),
+  deliveryTime: bigint("deliveryTime", { mode: "number" }),
+  realDeliveryTime: bigint("realDeliveryTime", { mode: "number" }),
+  deliveryName: text("deliveryName"),
+  clientNote: text("clientNote"),
+  managerNote: text("managerNote"),
+  returnPeriod: varchar("returnPeriod", { length: 10 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OrderItem = typeof orderItems.$inferSelect;
+
+// Snapshots for change tracking
+export const orderSnapshots = mysqlTable("order_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  vortexOrderId: varchar("vortexOrderId", { length: 32 }).notNull(),
+  snapshotData: json("snapshotData").notNull(),
+  syncBatchId: varchar("syncBatchId", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+// Change log
+export const changeLogs = mysqlTable("change_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  vortexOrderId: varchar("vortexOrderId", { length: 32 }).notNull(),
+  changeType: mysqlEnum("changeType", ["new", "modified", "deleted"]).notNull(),
+  fieldName: varchar("fieldName", { length: 100 }),
+  oldValue: text("oldValue"),
+  newValue: text("newValue"),
+  syncBatchId: varchar("syncBatchId", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ChangeLog = typeof changeLogs.$inferSelect;
+
+// Sync log
+export const syncLogs = mysqlTable("sync_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  batchId: varchar("batchId", { length: 64 }).notNull().unique(),
+  status: mysqlEnum("status", ["running", "completed", "failed"]).notNull(),
+  ordersProcessed: int("ordersProcessed").default(0),
+  itemsProcessed: int("itemsProcessed").default(0),
+  newOrders: int("newOrders").default(0),
+  modifiedOrders: int("modifiedOrders").default(0),
+  deletedOrders: int("deletedOrders").default(0),
+  errorMessage: text("errorMessage"),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+});
+
+export type SyncLog = typeof syncLogs.$inferSelect;

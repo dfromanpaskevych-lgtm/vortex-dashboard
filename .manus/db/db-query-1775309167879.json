@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `order_items` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`orderId` int NOT NULL,\n\t`vortexOrderId` varchar(32) NOT NULL,\n\t`orderItemId` varchar(32),\n\t`code` varchar(100),\n\t`brandName` varchar(100),\n\t`description` text,\n\t`status` varchar(30),\n\t`whName` text,\n\t`whId` varchar(20),\n\t`qty` int,\n\t`price` decimal(12,2),\n\t`basePrice` decimal(12,2),\n\t`basePriceCurrency` varchar(10),\n\t`retailPrice` decimal(12,2),\n\t`currency` varchar(10),\n\t`deliveryTime` bigint,\n\t`realDeliveryTime` bigint,\n\t`deliveryName` text,\n\t`clientNote` text,\n\t`managerNote` text,\n\t`returnPeriod` varchar(10),\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `order_items_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QyitGcsGrQwmi4r.root --database bZNvb2BP2LdsJjKJRBspoz --execute CREATE TABLE `order_items` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`orderId` int NOT NULL,\n\t`vortexOrderId` varchar(32) NOT NULL,\n\t`orderItemId` varchar(32),\n\t`code` varchar(100),\n\t`brandName` varchar(100),\n\t`description` text,\n\t`status` varchar(30),\n\t`whName` text,\n\t`whId` varchar(20),\n\t`qty` int,\n\t`price` decimal(12,2),\n\t`basePrice` decimal(12,2),\n\t`basePriceCurrency` varchar(10),\n\t`retailPrice` decimal(12,2),\n\t`currency` varchar(10),\n\t`deliveryTime` bigint,\n\t`realDeliveryTime` bigint,\n\t`deliveryName` text,\n\t`clientNote` text,\n\t`managerNote` text,\n\t`returnPeriod` varchar(10),\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `order_items_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 286
+}
