@@ -140,7 +140,7 @@ export async function getOrdersList(filters: OrderFilters) {
       status: orderItems.status,
       quantity: orderItems.qty,
       inputPrice: orderItems.basePrice,
-      salePrice: orderItems.retailPrice,
+      salePrice: orderItems.price,
     };
     if (fieldMap[filters.sortField]) {
       orderBy = dir(fieldMap[filters.sortField]);
@@ -184,6 +184,7 @@ export async function getOrdersList(filters: OrderFilters) {
       qty: orderItems.qty,
       basePrice: orderItems.basePrice,
       basePriceCurrency: orderItems.basePriceCurrency,
+      price: orderItems.price,
       retailPrice: orderItems.retailPrice,
       itemCurrency: orderItems.currency,
       deliveryTime: orderItems.deliveryTime,

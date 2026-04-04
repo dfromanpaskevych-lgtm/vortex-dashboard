@@ -94,13 +94,19 @@ function detectChanges(
 ): Array<{ field: string; oldVal: string; newVal: string }> {
   const changes: Array<{ field: string; oldVal: string; newVal: string }> = [];
 
+  // Normalize numeric strings for comparison ("11356.00" == "11356")
+  function normalizeNum(v: unknown): string {
+    if (v == null || v === "") return "";
+    const s = String(v).trim();
+    const n = Number(s);
+    if (!isNaN(n)) return String(n);
+    return s;
+  }
+
   // Check order-level fields
-  const fieldsToCheck = [
+  const textFields = [
     ["clientName", "clientName"],
     ["managerName", "managerName"],
-    ["sumUah", "sumUah"],
-    ["sumUsd", "sumUsd"],
-    ["sumEur", "sumEur"],
     ["customerPhone", "customerPhone"],
     ["trackNumber", "trackNumber"],
     ["deliveryName", "deliveryName"],
@@ -108,12 +114,24 @@ function detectChanges(
     ["clientNote", "clientNote"],
     ["managerNote", "managerNote"],
     ["paymentName", "paymentName"],
+  ];
+  const numericFields = [
+    ["sumUah", "sumUah"],
+    ["sumUsd", "sumUsd"],
+    ["sumEur", "sumEur"],
     ["codAmount", "codAmount"],
   ];
 
-  for (const [fieldLabel, fieldKey] of fieldsToCheck) {
-    const oldVal = String(existing[fieldKey] ?? "");
-    const newVal = String((newData as Record<string, unknown>)[fieldKey] ?? "");
+  for (const [fieldLabel, fieldKey] of textFields) {
+    const oldVal = String(existing[fieldKey] ?? "").trim();
+    const newVal = String((newData as Record<string, unknown>)[fieldKey] ?? "").trim();
+    if (oldVal !== newVal) {
+      changes.push({ field: fieldLabel, oldVal, newVal });
+    }
+  }
+  for (const [fieldLabel, fieldKey] of numericFields) {
+    const oldVal = normalizeNum(existing[fieldKey]);
+    const newVal = normalizeNum((newData as Record<string, unknown>)[fieldKey]);
     if (oldVal !== newVal) {
       changes.push({ field: fieldLabel, oldVal, newVal });
     }
@@ -148,8 +166,8 @@ function detectChanges(
       }
 
       // Base price change
-      const oldBase = String(existingItem.basePrice ?? "");
-      const newBase = newItem.base_price != null ? String(newItem.base_price) : "";
+      const oldBase = normalizeNum(existingItem.basePrice);
+      const newBase = normalizeNum(newItem.base_price);
       if (oldBase !== newBase) {
         changes.push({
           field: `item_base_price [${itemCode}]`,
@@ -158,9 +176,20 @@ function detectChanges(
         });
       }
 
+      // Sale price (price) change
+      const oldPrice = normalizeNum(existingItem.price);
+      const newPrice = normalizeNum(newItem.price);
+      if (oldPrice !== newPrice) {
+        changes.push({
+          field: `item_price [${itemCode}]`,
+          oldVal: oldPrice,
+          newVal: newPrice,
+        });
+      }
+
       // Retail price change
-      const oldRetail = String(existingItem.retailPrice ?? "");
-      const newRetail = newItem.retail_price != null ? String(newItem.retail_price) : "";
+      const oldRetail = normalizeNum(existingItem.retailPrice);
+      const newRetail = normalizeNum(newItem.retail_price);
       if (oldRetail !== newRetail) {
         changes.push({
           field: `item_retail_price [${itemCode}]`,
@@ -170,8 +199,8 @@ function detectChanges(
       }
 
       // Qty change
-      const oldQty = String(existingItem.qty ?? "");
-      const newQty = newItem.qty != null ? String(newItem.qty) : "";
+      const oldQty = normalizeNum(existingItem.qty);
+      const newQty = normalizeNum(newItem.qty);
       if (oldQty !== newQty) {
         changes.push({
           field: `item_qty [${itemCode}]`,

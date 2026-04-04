@@ -114,8 +114,9 @@ export default function Orders() {
 
   const tableRows = useMemo(() => {
     return rows.map((row: any) => {
-      const delta = row.basePrice && row.retailPrice
-        ? (Number(row.retailPrice) - Number(row.basePrice)).toFixed(2)
+      const salePrice = row.price || row.retailPrice;
+      const delta = row.basePrice && salePrice
+        ? (Number(salePrice) - Number(row.basePrice)).toFixed(2)
         : "";
       return {
         num: row.vortexOrderId,
@@ -130,7 +131,7 @@ export default function Orders() {
         qty: row.qty || "",
         inputPrice: formatPrice(row.basePrice),
         inputCurrency: row.basePriceCurrency || "",
-        salePrice: formatPrice(row.retailPrice),
+        salePrice: formatPrice(salePrice),
         delta: delta ? formatPrice(delta) : "",
         saleCurrency: row.itemCurrency || "",
         currentBalance: "",

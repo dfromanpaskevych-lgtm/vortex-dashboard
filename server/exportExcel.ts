@@ -38,6 +38,7 @@ export async function handleExcelExport(req: Request, res: Response) {
         qty: orderItems.qty,
         basePrice: orderItems.basePrice,
         basePriceCurrency: orderItems.basePriceCurrency,
+        price: orderItems.price,
         retailPrice: orderItems.retailPrice,
         itemCurrency: orderItems.currency,
         deliveryTime: orderItems.deliveryTime,
@@ -54,7 +55,7 @@ export async function handleExcelExport(req: Request, res: Response) {
     // Title row
     const now = new Date();
     const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - 7);
+    startDate.setDate(startDate.getDate() - 3);
     const titleText = `Звіт «Замовлення клієнтів» — ${startDate.toLocaleDateString("uk-UA")} - ${now.toLocaleDateString("uk-UA")}`;
     worksheet.mergeCells("A1:AA1");
     const titleCell = worksheet.getCell("A1");
@@ -92,8 +93,8 @@ export async function handleExcelExport(req: Request, res: Response) {
     // Data rows
     for (const row of rows) {
       const bp = row.basePrice ? Number(row.basePrice) : null;
-      const rp = row.retailPrice ? Number(row.retailPrice) : null;
-      const delta = bp != null && rp != null ? (rp - bp) : null;
+      const sp = row.price ? Number(row.price) : (row.retailPrice ? Number(row.retailPrice) : null);
+      const delta = bp != null && sp != null ? (sp - bp) : null;
 
       worksheet.addRow([
         row.vortexOrderId,
@@ -108,7 +109,7 @@ export async function handleExcelExport(req: Request, res: Response) {
         row.qty || "",
         bp != null ? bp : "",
         row.basePriceCurrency || "",
-        rp != null ? rp : "",
+        sp != null ? sp : "",
         delta != null ? delta : "",
         row.itemCurrency || "",
         "",

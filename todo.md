@@ -27,3 +27,8 @@
 - [x] Update syncService to use reliable fetching strategy
 - [x] Fix change tracking to properly detect modifications
 - [x] Verify dashboard shows clean correct data
+- [x] Fix price mapping: Продаж shows `price` (not retailPrice), Дельта = price - basePrice
+- [x] Sync new order 87749 (Mazda RF, price 2000 UAH)
+- [x] Verify price columns: base_price → Вхідна ціна, price → Продаж, Дельта = price - basePrice
+- [x] Fix change tracking false positives (normalizeNum for numeric fields)
+- [x] Clean 550 fake sumUah change logs
