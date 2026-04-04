@@ -47,6 +47,8 @@ export async function handleExcelExport(req: Request, res: Response) {
         supplierTotal: orderItems.supplierTotal,
         supplierCurrency: orderItems.supplierCurrency,
         rgTimestamp: orderItems.rgTimestamp,
+        balanceCurrencyTotal: orders.balanceCurrencyTotal,
+        balanceCurrency: orders.balanceCurrency,
       })
       .from(orders)
       .leftJoin(orderItems, eq(orders.vortexOrderId, orderItems.vortexOrderId))
@@ -117,8 +119,8 @@ export async function handleExcelExport(req: Request, res: Response) {
         sp != null ? sp : "—",
         delta != null ? delta : "—",
         row.itemCurrency ? row.itemCurrency.toUpperCase() : "—",
-        "—",  // Поточний баланс - не в API
-        "—",  // Валюта баланс - не в API
+        row.balanceCurrencyTotal ? Number(row.balanceCurrencyTotal) : "—",
+        row.balanceCurrency ? row.balanceCurrency.toUpperCase() : "—",
         row.clientName?.trim() || "—",
         "—",  // Тип клієнта - не в API
         "—",  // Група націнок - не в API

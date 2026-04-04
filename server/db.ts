@@ -194,6 +194,8 @@ export async function getOrdersList(filters: OrderFilters) {
       supplierCurrency: orderItems.supplierCurrency,
       rgId: orderItems.rgId,
       rgTimestamp: orderItems.rgTimestamp,
+      balanceCurrencyTotal: orders.balanceCurrencyTotal,
+      balanceCurrency: orders.balanceCurrency,
     })
     .from(orders)
     .leftJoin(orderItems, eq(orders.vortexOrderId, orderItems.vortexOrderId))

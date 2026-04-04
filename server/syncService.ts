@@ -1,7 +1,7 @@
 import { eq, desc, and } from "drizzle-orm";
 import { getDb } from "./db";
 import { orders, orderItems, orderSnapshots, changeLogs, syncLogs } from "../drizzle/schema";
-import { fetchOrdersByDateRange, fetchRgByDateRange } from "./vortexClient";
+import { fetchOrdersByDateRange, fetchRgByDateRange, getOrderById } from "./vortexClient";
 import { nanoid } from "nanoid";
 
 let isSyncing = false;
@@ -401,6 +401,45 @@ export async function syncOrders(days = 3): Promise<{ batchId: string; success: 
       });
     }
 
+    // ===== ENRICH WITH get_order_by_id (balance data) =====
+    let balanceEnriched = 0;
+    try {
+      console.log(`[Sync] Enriching orders with balance data from get_order_by_id...`);
+      const allOrderIds = fetchedOrders.map(o => String(o.order_id || o.id || "")).filter(Boolean);
+      
+      for (let i = 0; i < allOrderIds.length; i++) {
+        const oid = allOrderIds[i];
+        try {
+          const detail = await getOrderById(oid);
+          if (detail && typeof detail === 'object') {
+            const balanceCurrencyTotal = detail.balance_currency_total != null ? String(detail.balance_currency_total) : null;
+            const balanceCurrency = detail.balance_currency ? String(detail.balance_currency) : null;
+            
+            if (balanceCurrencyTotal || balanceCurrency) {
+              await db
+                .update(orders)
+                .set({
+                  balanceCurrencyTotal,
+                  balanceCurrency,
+                })
+                .where(eq(orders.vortexOrderId, oid));
+              balanceEnriched++;
+            }
+          }
+        } catch (detailErr) {
+          console.warn(`[Sync] get_order_by_id failed for ${oid}: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}`);
+        }
+        
+        // Pause between detail requests to avoid overloading API
+        if (i < allOrderIds.length - 1) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+      console.log(`[Sync] Enriched ${balanceEnriched}/${allOrderIds.length} orders with balance data`);
+    } catch (balanceError) {
+      console.error(`[Sync] Balance enrichment failed (non-critical):`, balanceError);
+    }
+
     // ===== ENRICH WITH RG DATA (supplier info) =====
     let rgEnriched = 0;
     try {
@@ -473,7 +512,7 @@ export async function syncOrders(days = 3): Promise<{ batchId: string; success: 
       })
       .where(eq(syncLogs.batchId, batchId));
 
-    const msg = `Synced ${fetchedOrders.length} orders (${newCount} new, ${modifiedCount} modified, ${rgEnriched} items enriched with supplier data)`;
+    const msg = `Synced ${fetchedOrders.length} orders (${newCount} new, ${modifiedCount} modified, ${balanceEnriched} with balance, ${rgEnriched} items enriched with supplier data)`;
     console.log(`[Sync] Completed: ${msg}`);
     isSyncing = false;
     return { batchId, success: true, message: msg };

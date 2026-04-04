@@ -162,7 +162,7 @@ export async function getOrders(
  * Get a single order by ID.
  */
 export async function getOrderById(orderId: string): Promise<Record<string, unknown>> {
-  const result = await makeApiRequestWithRetry("get_order_by_id", { order_id: orderId });
+  const result = await makeApiRequestWithRetry("get_order_by_id", { or_id: Number(orderId) }, 5, 120000);
   return result as Record<string, unknown>;
 }
 

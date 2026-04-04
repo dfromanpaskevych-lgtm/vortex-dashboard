@@ -37,6 +37,8 @@ export const orders = mysqlTable("orders", {
   paymentName: varchar("paymentName", { length: 100 }),
   codAmount: decimal("codAmount", { precision: 12, scale: 2 }),
   codCurrency: varchar("codCurrency", { length: 10 }),
+  balanceCurrencyTotal: decimal("balanceCurrencyTotal", { precision: 12, scale: 2 }),
+  balanceCurrency: varchar("balanceCurrency", { length: 10 }),
   rawJson: json("rawJson"),
   createdTs: bigint("createdTs", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

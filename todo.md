@@ -46,3 +46,7 @@
 - [x] New DB columns: supplierName, supplierTotal, supplierCurrency, rgId, rgTimestamp
 - [x] Order 87749 enriched: ALLPARTS САЙТ ВИГРУЗКА PL, 3200 UAH
 - [x] Change tracking confirmed: 10 changes logged for 87749 (status, price, basePrice transitions)
+- [x] Deep-check ALL API fields: found balance_currency_total + balance_currency in get_order_by_id
+- [x] get_order_by_id enrichment: 141/141 orders now have balance data (e.g. 87749: 8500 UAH)
+- [x] Client type & markup group confirmed NOT in API (neither get_orders nor get_order_by_id)
+- [x] Balance fields mapped to table (Поточний баланс, Валюта баланс) and Excel export
