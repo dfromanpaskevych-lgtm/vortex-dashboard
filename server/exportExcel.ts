@@ -5,7 +5,7 @@ import { orders, orderItems } from "../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 
 function formatDate(ts: number | null | undefined): string {
-  if (!ts) return "";
+  if (!ts) return "—";
   const d = new Date(ts * 1000);
   return d.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -95,35 +95,36 @@ export async function handleExcelExport(req: Request, res: Response) {
       const bp = row.basePrice ? Number(row.basePrice) : null;
       const sp = row.price ? Number(row.price) : (row.retailPrice ? Number(row.retailPrice) : null);
       const delta = bp != null && sp != null ? (sp - bp) : null;
+      const phone = row.customerPhone && row.customerPhone.trim() !== "" ? row.customerPhone.trim() : "немає номеру";
 
       worksheet.addRow([
         row.vortexOrderId,
-        row.managerName || "",
-        row.brandName || "",
-        row.code || "",
-        row.description || "",
-        row.status || "",
-        row.whName || "",
+        row.managerName?.trim() || "—",
+        row.brandName || "—",
+        row.code || "—",
+        row.description?.trim() || "—",
+        row.status || "—",
+        row.whName || "—",
         formatDate(row.createdTs),
         formatDate(row.deliveryTime),
-        row.qty || "",
-        bp != null ? bp : "",
-        row.basePriceCurrency || "",
-        sp != null ? sp : "",
-        delta != null ? delta : "",
-        row.itemCurrency || "",
-        "",
-        "",
-        row.clientName || "",
-        "",
-        "",
-        row.deliveryName || "",
-        row.customerPhone || "",
-        row.trackNumber || "",
+        row.qty || "—",
+        bp != null ? bp : "—",
+        row.basePriceCurrency ? row.basePriceCurrency.toUpperCase() : "—",
+        sp != null ? sp : "—",
+        delta != null ? delta : "—",
+        row.itemCurrency ? row.itemCurrency.toUpperCase() : "—",
+        "—",  // Поточний баланс - не в API
+        "—",  // Валюта баланс - не в API
+        row.clientName?.trim() || "—",
+        "—",  // Тип клієнта - не в API
+        "—",  // Група націнок - не в API
+        row.deliveryName || "—",
+        phone,
+        row.trackNumber || "—",
         formatDate(row.realDeliveryTime),
-        "",
-        "",
-        "",
+        "—",  // Баланс постач. - не в API
+        "—",  // Валюта постач. - не в API
+        "—",  // Дата оплати накладної - не в API
       ]);
     }
 

@@ -35,16 +35,22 @@ const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondar
 };
 
 function formatDate(ts: number | null | undefined): string {
-  if (!ts) return "";
+  if (!ts) return "—";
   const d = new Date(ts * 1000);
   return d.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function formatPrice(val: string | number | null | undefined): string {
-  if (val == null || val === "") return "";
+  if (val == null || val === "") return "—";
   const n = Number(val);
   if (isNaN(n)) return String(val);
   return n.toLocaleString("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Show "—" for empty/null text fields */
+function showText(val: string | null | undefined, fallback = "—"): string {
+  if (!val || val.trim() === "") return fallback;
+  return val.trim();
 }
 
 export default function Orders() {
@@ -117,35 +123,35 @@ export default function Orders() {
       const salePrice = row.price || row.retailPrice;
       const delta = row.basePrice && salePrice
         ? (Number(salePrice) - Number(row.basePrice)).toFixed(2)
-        : "";
+        : null;
       return {
         num: row.vortexOrderId,
-        manager: row.managerName || "",
-        brand: row.brandName || "",
-        article: row.code || "",
-        description: row.description || "",
+        manager: showText(row.managerName),
+        brand: showText(row.brandName),
+        article: showText(row.code),
+        description: showText(row.description),
         status: row.status || "",
-        warehouse: row.whName || "",
+        warehouse: showText(row.whName),
         created: formatDate(row.createdTs),
         arrival: formatDate(row.deliveryTime),
-        qty: row.qty || "",
+        qty: row.qty || "—",
         inputPrice: formatPrice(row.basePrice),
-        inputCurrency: row.basePriceCurrency || "",
+        inputCurrency: row.basePriceCurrency ? row.basePriceCurrency.toUpperCase() : "—",
         salePrice: formatPrice(salePrice),
-        delta: delta ? formatPrice(delta) : "",
-        saleCurrency: row.itemCurrency || "",
-        currentBalance: "",
-        balanceCurrency: "",
-        client: row.clientName || "",
-        clientType: "",
-        markupGroup: "",
-        delivery: row.deliveryName || "",
-        phone: row.customerPhone || "",
-        issueDoc: row.trackNumber || "",
+        delta: delta ? formatPrice(delta) : "—",
+        saleCurrency: row.itemCurrency ? row.itemCurrency.toUpperCase() : "—",
+        currentBalance: "—",
+        balanceCurrency: "—",
+        client: showText(row.clientName),
+        clientType: "—",
+        markupGroup: "—",
+        delivery: showText(row.deliveryName),
+        phone: row.customerPhone && row.customerPhone.trim() !== "" ? row.customerPhone.trim() : "немає номеру",
+        issueDoc: showText(row.trackNumber, "—"),
         issueDate: formatDate(row.realDeliveryTime),
-        supplierBalance: "",
-        supplierCurrency: "",
-        invoicePaymentDate: "",
+        supplierBalance: "—",
+        supplierCurrency: "—",
+        invoicePaymentDate: "—",
       };
     });
   }, [rows]);
@@ -291,20 +297,20 @@ export default function Orders() {
                   </TableHead>
                   <TableHead className="w-[80px] whitespace-nowrap text-right">Дельта</TableHead>
                   <TableHead className="w-[70px] whitespace-nowrap">Валюта продаж</TableHead>
-                  <TableHead className="w-[90px] whitespace-nowrap text-right">Поточний баланс</TableHead>
-                  <TableHead className="w-[70px] whitespace-nowrap">Валюта баланс</TableHead>
+                  <TableHead className="w-[110px] whitespace-nowrap text-right">Поточний баланс</TableHead>
+                  <TableHead className="w-[80px] whitespace-nowrap">Валюта баланс</TableHead>
                   <TableHead className="w-[160px] cursor-pointer whitespace-nowrap" onClick={() => handleSort("client")}>
                     <div className="flex items-center gap-1">Клієнт <SortIcon field="client" /></div>
                   </TableHead>
                   <TableHead className="w-[90px] whitespace-nowrap">Тип клієнта</TableHead>
                   <TableHead className="w-[100px] whitespace-nowrap">Група націнок</TableHead>
                   <TableHead className="w-[140px] whitespace-nowrap">Доставка</TableHead>
-                  <TableHead className="w-[120px] whitespace-nowrap">Номер телефону</TableHead>
+                  <TableHead className="w-[130px] whitespace-nowrap">Номер телефону</TableHead>
                   <TableHead className="w-[130px] whitespace-nowrap">Документ видачі</TableHead>
                   <TableHead className="w-[100px] whitespace-nowrap">Дата видачі</TableHead>
-                  <TableHead className="w-[90px] whitespace-nowrap text-right">Баланс постач.</TableHead>
-                  <TableHead className="w-[70px] whitespace-nowrap">Валюта постач.</TableHead>
-                  <TableHead className="w-[110px] whitespace-nowrap">Дата оплати накладної</TableHead>
+                  <TableHead className="w-[100px] whitespace-nowrap text-right">Баланс постач.</TableHead>
+                  <TableHead className="w-[80px] whitespace-nowrap">Валюта постач.</TableHead>
+                  <TableHead className="w-[130px] whitespace-nowrap">Дата оплати накладної</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -348,18 +354,18 @@ export default function Orders() {
                       <TableCell className="text-xs text-right font-mono">{row.salePrice}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{row.delta}</TableCell>
                       <TableCell className="text-xs uppercase">{row.saleCurrency}</TableCell>
-                      <TableCell className="text-xs text-right font-mono">{row.currentBalance}</TableCell>
-                      <TableCell className="text-xs uppercase">{row.balanceCurrency}</TableCell>
+                      <TableCell className="text-xs text-right font-mono text-muted-foreground">{row.currentBalance}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{row.balanceCurrency}</TableCell>
                       <TableCell className="text-xs truncate max-w-[160px]" title={row.client}>{row.client}</TableCell>
-                      <TableCell className="text-xs">{row.clientType}</TableCell>
-                      <TableCell className="text-xs">{row.markupGroup}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{row.clientType}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{row.markupGroup}</TableCell>
                       <TableCell className="text-xs truncate max-w-[140px]" title={row.delivery}>{row.delivery}</TableCell>
-                      <TableCell className="text-xs font-mono">{row.phone}</TableCell>
+                      <TableCell className={`text-xs font-mono ${row.phone === "немає номеру" ? "text-muted-foreground italic" : ""}`}>{row.phone}</TableCell>
                       <TableCell className="text-xs font-mono truncate max-w-[130px]" title={row.issueDoc}>{row.issueDoc}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap">{row.issueDate}</TableCell>
-                      <TableCell className="text-xs text-right font-mono">{row.supplierBalance}</TableCell>
-                      <TableCell className="text-xs uppercase">{row.supplierCurrency}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">{row.invoicePaymentDate}</TableCell>
+                      <TableCell className="text-xs text-right font-mono text-muted-foreground">{row.supplierBalance}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{row.supplierCurrency}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{row.invoicePaymentDate}</TableCell>
                     </TableRow>
                   ))
                 )}

@@ -32,3 +32,12 @@
 - [x] Verify price columns: base_price → Вхідна ціна, price → Продаж, Дельта = price - basePrice
 - [x] Fix change tracking false positives (normalizeNum for numeric fields)
 - [x] Clean 550 fake sumUah change logs
+- [x] Extract missing fields from API: поточний баланс, валюта балансу, тип клієнта, група націнок (NOT IN API, show —)
+- [x] Extract missing fields: номер телефону (show "немає номеру" if empty) - 97/141 orders have phones
+- [x] Extract missing fields: документ видачі (track_number, 10 orders), дата видачі (realDeliveryTime)
+- [x] Extract missing fields: баланс постач., валюта постач., дата оплати накладної (NOT IN API, show —)
+- [x] All fields already in DB schema, no new columns needed
+- [x] syncService already maps all available API fields
+- [x] Orders table shows all 27 columns: real data where available, — where not in API
+- [x] Excel export updated with all fields, — for unavailable, немає номеру for empty phone
+- [x] Data already loaded with all available fields from API
