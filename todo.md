@@ -57,3 +57,4 @@
 - [x] Verify all March data is complete and correct
 - [x] Disable auto-sync to prevent April data from being added automatically
 - [x] Deploy with public URL
+- [x] Add pagination controls to orders table (prev/next buttons, page numbers, page size selector)

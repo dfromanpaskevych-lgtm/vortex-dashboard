@@ -1,5 +1,5 @@
+import React, { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
-import { useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, Download } from "lucide-react";
+import { Search, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 
@@ -63,7 +63,7 @@ export default function Orders() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(50);
 
   const queryInput = useMemo(() => ({
     search: search || undefined,
@@ -75,7 +75,7 @@ export default function Orders() {
     sortDir,
     page,
     pageSize,
-  }), [search, manager, status, brand, client, sortField, sortDir, page]);
+  }), [search, manager, status, brand, client, sortField, sortDir, page, pageSize]);
 
   const { data, isLoading } = trpc.orders.list.useQuery(queryInput);
   const { data: filterOptions } = trpc.orders.filterOptions.useQuery();
@@ -377,17 +377,58 @@ export default function Orders() {
       </Card>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Сторінка {page} з {totalPages}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-              Назад
+      {totalPages > 0 && (
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Рядків на сторінці:</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+              <SelectTrigger className="h-8 w-[70px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="200">200</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="ml-2">
+              {((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, total)} з {total}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(1)} title="Перша сторінка">
+              <ChevronsLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-              Далі
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(page - 1)} title="Попередня">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {/* Page number buttons */}
+            {(() => {
+              const pages: number[] = [];
+              const delta = 2;
+              const left = Math.max(1, page - delta);
+              const right = Math.min(totalPages, page + delta);
+              for (let i = left; i <= right; i++) pages.push(i);
+              const result: React.ReactNode[] = [];
+              if (left > 1) {
+                result.push(<Button key={1} variant={page === 1 ? "default" : "outline"} size="icon" className="h-8 w-8" onClick={() => setPage(1)}>1</Button>);
+                if (left > 2) result.push(<span key="l-ellipsis" className="px-1 text-muted-foreground">…</span>);
+              }
+              pages.forEach(p => result.push(
+                <Button key={p} variant={page === p ? "default" : "outline"} size="icon" className="h-8 w-8" onClick={() => setPage(p)}>{p}</Button>
+              ));
+              if (right < totalPages) {
+                if (right < totalPages - 1) result.push(<span key="r-ellipsis" className="px-1 text-muted-foreground">…</span>);
+                result.push(<Button key={totalPages} variant={page === totalPages ? "default" : "outline"} size="icon" className="h-8 w-8" onClick={() => setPage(totalPages)}>{totalPages}</Button>);
+              }
+              return result;
+            })()}
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(page + 1)} title="Наступна">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(totalPages)} title="Остання сторінка">
+              <ChevronsRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
