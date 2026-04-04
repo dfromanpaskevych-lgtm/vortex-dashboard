@@ -6,8 +6,8 @@ import { z } from "zod";
 import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList } from "./db";
 import { syncOrders, getSyncStatus, startScheduledSync } from "./syncService";
 
-// Start scheduled sync on server boot
-startScheduledSync();
+// Scheduled sync disabled — data loaded manually via load-march.mjs
+// startScheduledSync();
 
 export const appRouter = router({
   system: systemRouter,

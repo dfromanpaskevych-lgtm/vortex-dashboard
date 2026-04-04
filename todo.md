@@ -50,3 +50,10 @@
 - [x] get_order_by_id enrichment: 141/141 orders now have balance data (e.g. 87749: 8500 UAH)
 - [x] Client type & markup group confirmed NOT in API (neither get_orders nor get_order_by_id)
 - [x] Balance fields mapped to table (Поточний баланс, Валюта баланс) and Excel export
+- [x] Clear all April data from database
+- [x] Load all March orders (March 1-31) day by day, small batches — 1657 orders, 2569 items
+- [x] Enrich March orders with balance data (get_order_by_id) — 401 orders enriched
+- [x] Enrich March orders with supplier data (get_rg_list) — 1923 items enriched
+- [x] Verify all March data is complete and correct
+- [x] Disable auto-sync to prevent April data from being added automatically
+- [x] Deploy with public URL
