@@ -172,6 +172,7 @@ export default function Orders() {
         inputCurrency: row.basePriceCurrency ? row.basePriceCurrency.toUpperCase() : "\u2014",
         basePriceUah: basePriceUah ? formatPrice(basePriceUah) : "\u2014",
         fixedRate: fixedRate ? fixedRate.toFixed(2) : "\u2014",
+        fixedRateDate: row.fixedRateDate ? row.fixedRateDate : "\u2014",
         salePrice: formatPrice(salePrice),
         delta: delta ? formatPrice(delta) : "\u2014",
         saleCurrency: row.itemCurrency ? row.itemCurrency.toUpperCase() : "\u2014",
@@ -347,6 +348,7 @@ export default function Orders() {
                   <TableHead className="w-[70px] whitespace-nowrap">Валюта вхід.</TableHead>
                   <TableHead className="w-[100px] whitespace-nowrap text-right">Вхідна (грн)</TableHead>
                   <TableHead className="w-[70px] whitespace-nowrap text-right">Курс</TableHead>
+                  <TableHead className="w-[110px] whitespace-nowrap">Дата фіксації курсу</TableHead>
                   <TableHead className="w-[90px] cursor-pointer whitespace-nowrap text-right" onClick={() => handleSort("salePrice")}>
                     <div className="flex items-center justify-end gap-1">Продаж <SortIcon field="salePrice" /></div>
                   </TableHead>
@@ -381,7 +383,7 @@ export default function Orders() {
                   ))
                 ) : tableRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={29} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={30} className="text-center py-12 text-muted-foreground">
                       Замовлення не знайдено
                     </TableCell>
                   </TableRow>
@@ -408,6 +410,7 @@ export default function Orders() {
                       <TableCell className="text-xs uppercase">{row.inputCurrency}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{row.basePriceUah}</TableCell>
                       <TableCell className="text-xs text-right font-mono text-muted-foreground">{row.fixedRate}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{row.fixedRateDate}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{row.salePrice}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{row.delta}</TableCell>
                       <TableCell className="text-xs uppercase">{row.saleCurrency}</TableCell>

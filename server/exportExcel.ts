@@ -153,7 +153,7 @@ export async function handleExcelExport(req: Request, res: Response) {
     const headers = [
       "№", "Менеджер", "Бренд", "Артикул", "Опис", "Статус", "Склад",
       "Оформлено", "Прибуття", "К-сть", "Вхідна ціна", "Валюта вхід.",
-      "Вхідна (грн)", "Курс",
+      "Вхідна (грн)", "Курс", "Дата фіксації курсу",
       "Продаж", "Дельта", "Валюта продаж", "Поточний баланс", "Валюта баланс",
       "Клієнт", "Тип клієнта", "Група націнок", "Доставка", "Номер телефону",
       "Документ видачі", "Дата видачі", "Баланс постач.", "Валюта постач.",
@@ -206,6 +206,7 @@ export async function handleExcelExport(req: Request, res: Response) {
         row.basePriceCurrency ? row.basePriceCurrency.toUpperCase() : "—",
         basePriceUah != null ? Math.round(basePriceUah * 100) / 100 : "—",
         fixedRate != null ? fixedRate : "—",
+        row.fixedRateDate ? row.fixedRateDate : "—",
         sp != null ? sp : "—",
         delta != null ? delta : "—",
         row.itemCurrency ? row.itemCurrency.toUpperCase() : "—",

@@ -122,3 +122,6 @@
 - [x] Excel export: include Вхідна (грн) and Курс columns
 - [x] REST API: include fixedRate, fixedRateDate, basePriceUah in item response
 - [x] Vitest tests for currency service (15 tests, all passing)
+- [x] UI: add "Дата фіксації курсу" column to Orders table
+- [x] Excel: add "Дата фіксації курсу" column to export
+- [x] REST API: fixedRateDate confirmed in select query and item response
