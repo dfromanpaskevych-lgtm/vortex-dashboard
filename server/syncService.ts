@@ -321,6 +321,13 @@ export async function syncOrders(
       const vortexOrderId = String(rawOrder.order_id || rawOrder.id || "");
       if (!vortexOrderId) continue;
 
+      // ===== FILTER: skip 'Сайт' manager and 'Архів' status =====
+      const rawManagerName = String(rawOrder.manager_name || "").trim();
+      const rawOrderStatus = String(rawOrder.status || rawOrder.order_status || "").trim();
+      if (rawManagerName === "Сайт" || rawOrderStatus === "Архів") {
+        continue;
+      }
+
       // Check if order exists in DB
       const [existing] = await db
         .select()
@@ -351,8 +358,9 @@ export async function syncOrders(
           syncBatchId: batchId,
         });
 
-        // Insert items
+        // Insert items (skip archived)
         for (const item of rawItems) {
+          if (String(item.status || "").trim() === "archived") continue;
           await db.insert(orderItems).values(mapItemToDb(item, orderId, vortexOrderId));
           totalItems++;
         }
@@ -392,9 +400,10 @@ export async function syncOrders(
             });
           }
 
-          // Replace items
+          // Replace items (skip archived)
           await db.delete(orderItems).where(eq(orderItems.vortexOrderId, vortexOrderId));
           for (const item of rawItems) {
+            if (String(item.status || "").trim() === "archived") continue;
             await db.insert(orderItems).values(mapItemToDb(item, existing.id, vortexOrderId));
             totalItems++;
           }

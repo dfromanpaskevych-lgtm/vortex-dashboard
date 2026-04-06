@@ -67,3 +67,7 @@
 - [x] Add separate enrichBalances() function in syncService
 - [x] Add tRPC sync.enrichBalances procedure
 - [x] Add 'Збагатити балансами' button to Sync page UI
+- [x] Filter: skip orders with manager='Сайт' during sync
+- [x] Filter: skip order items with status='archived' during sync (not whole orders)
+- [x] Delete existing archived items from DB (86 items removed)
+- [x] Delete existing orders with manager='Сайт' from DB (86 orders removed)
