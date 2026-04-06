@@ -103,3 +103,12 @@
 - [x] UI: API Keys management page (generate, revoke, list)
 - [x] UI: Webhooks management page (add URL, select events, test, delete)
 - [x] API documentation page (inline on API & Webhooks page)
+- [x] Bug #1: Fix delta calculation — delta = (price - basePrice) × qty to match Vortex (confirmed via screenshots)
+- [x] Bug #2: AVR РЕГУЛЯТОР qty confirmed correct — DB has qty=5 in single row, matching Vortex
+- [x] Bug #3: Manager mapping — API has no alternative field; only 1 Адмінка order remains (60117, no paired order)
+- [x] Delta not stored in DB — calculated on-the-fly in UI/Excel/API (now with ×qty)
+- [x] Delta verified: AVR РЕГУЛЯТОР order 85473 qty=5 → delta=5225 matches Vortex screenshot
+- [x] Investigated: Vortex API does NOT return delta field — only price, base_price, qty
+- [x] Investigated: price and base_price are PER UNIT; sumUah = SUM(price×qty) confirmed for all 20 tested orders
+- [x] Fix: delta = (price - basePrice) × qty in UI, Excel export, and REST API
+- [x] Delta calculation is currency-agnostic: simple subtraction × qty (matches Vortex behavior)

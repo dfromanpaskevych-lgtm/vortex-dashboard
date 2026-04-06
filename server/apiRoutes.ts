@@ -199,6 +199,11 @@ apiRouter.get("/orders", async (req: Request, res: Response) => {
       }
 
       if (row.itemId) {
+        const itemQty = Number(row.qty) || 1;
+        const itemPrice = row.price ? Number(row.price) : null;
+        const itemBase = row.basePrice ? Number(row.basePrice) : null;
+        // Vortex delta = (price_per_unit - base_price_per_unit) × qty
+        const itemDelta = itemPrice != null && itemBase != null ? ((itemPrice - itemBase) * itemQty).toFixed(2) : null;
         ordersMap.get(key)!.items.push({
           orderItemId: row.orderItemId,
           code: row.code,
@@ -211,6 +216,7 @@ apiRouter.get("/orders", async (req: Request, res: Response) => {
           price: row.price,
           basePrice: row.basePrice,
           basePriceCurrency: row.basePriceCurrency,
+          delta: itemDelta,
           retailPrice: row.retailPrice,
           currency: row.itemCurrency,
           deliveryTime: row.deliveryTime,
@@ -281,12 +287,21 @@ apiRouter.get("/orders/:id", async (req: Request, res: Response) => {
       .orderBy(desc(changeLogs.createdAt))
       .limit(100);
 
+    // Add computed delta to each item
+    const itemsWithDelta = items.map((item: any) => {
+      const itemQty = Number(item.qty) || 1;
+      const itemPrice = item.price ? Number(item.price) : null;
+      const itemBase = item.basePrice ? Number(item.basePrice) : null;
+      const delta = itemPrice != null && itemBase != null ? ((itemPrice - itemBase) * itemQty).toFixed(2) : null;
+      return { ...item, delta };
+    });
+
     res.json({
       order: {
         ...order,
         createdDate: order.createdTs ? new Date(order.createdTs * 1000).toISOString() : null,
       },
-      items,
+      items: itemsWithDelta,
       changes,
     });
   } catch (error) {

@@ -178,7 +178,10 @@ export async function handleExcelExport(req: Request, res: Response) {
     for (const row of rows) {
       const bp = row.basePrice ? Number(row.basePrice) : null;
       const sp = row.price ? Number(row.price) : (row.retailPrice ? Number(row.retailPrice) : null);
-      const delta = bp != null && sp != null ? (sp - bp) : null;
+      const qty = Number(row.qty) || 1;
+      // Vortex delta = (price_per_unit - base_price_per_unit) × qty
+      // Both price and base_price are per-unit; delta is for the TOTAL quantity
+      const delta = bp != null && sp != null ? (sp - bp) * qty : null;
       const phone = row.customerPhone && row.customerPhone.trim() !== "" ? row.customerPhone.trim() : "немає номеру";
 
       worksheet.addRow([
