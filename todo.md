@@ -88,3 +88,5 @@
 - [x] Verify: invoices use different IDs in API (85xxx/86xxx/87xxx) vs document (56xxx/57xxx)
 - [x] Verify: only 1 Адмінка order remaining (60117 — no paired EUR order found)
 - [ ] Verify: total complete rows count (pending user check)
+- [x] Add date range filter (від/до) to Orders page
+- [x] Excel export respects selected date filter (all filters passed as query params)

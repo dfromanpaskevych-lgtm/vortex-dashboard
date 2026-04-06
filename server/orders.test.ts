@@ -58,6 +58,46 @@ describe("orders router", () => {
     const result = await caller.orders.list({ search: "test_nonexistent_xyz" });
     expect(result.rows.length).toBe(0);
   });
+
+  it("supports date range filter (dateFrom/dateTo)", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    // March 15 2026 00:00:00 UTC
+    const dateFrom = Math.floor(new Date("2026-03-15T00:00:00Z").getTime() / 1000);
+    // March 15 2026 23:59:59 UTC
+    const dateTo = Math.floor(new Date("2026-03-15T23:59:59Z").getTime() / 1000);
+    const result = await caller.orders.list({ dateFrom, dateTo });
+    expect(result).toHaveProperty("rows");
+    expect(result).toHaveProperty("total");
+    // All returned rows should be within the date range
+    for (const row of result.rows) {
+      if (row.createdTs) {
+        expect(row.createdTs).toBeGreaterThanOrEqual(dateFrom);
+        expect(row.createdTs).toBeLessThanOrEqual(dateTo);
+      }
+    }
+  });
+
+  it("date filter returns fewer results than no filter", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    const allResult = await caller.orders.list({});
+    // Filter to just one day — should have fewer or equal orders
+    const dateFrom = Math.floor(new Date("2026-03-10T00:00:00Z").getTime() / 1000);
+    const dateTo = Math.floor(new Date("2026-03-10T23:59:59Z").getTime() / 1000);
+    const filteredResult = await caller.orders.list({ dateFrom, dateTo });
+    expect(filteredResult.total).toBeLessThanOrEqual(allResult.total);
+  });
+
+  it("future date filter returns zero results", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    const dateFrom = Math.floor(new Date("2030-01-01T00:00:00Z").getTime() / 1000);
+    const dateTo = Math.floor(new Date("2030-12-31T23:59:59Z").getTime() / 1000);
+    const result = await caller.orders.list({ dateFrom, dateTo });
+    expect(result.total).toBe(0);
+    expect(result.rows.length).toBe(0);
+  });
 });
 
 describe("dashboard router", () => {
@@ -92,6 +132,39 @@ describe("changes router", () => {
     const result = await caller.changes.list({ changeType: "new" });
     expect(result).toHaveProperty("rows");
     expect(result).toHaveProperty("total");
+  });
+});
+
+describe("logistics router", () => {
+  it("returns logistics list with rows and total", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.logistics.list({});
+    expect(result).toHaveProperty("rows");
+    expect(result).toHaveProperty("total");
+    expect(Array.isArray(result.rows)).toBe(true);
+  });
+
+  it("logistics items should only contain ВЛАСНА ЛОГІСТИКА", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.logistics.list({ pageSize: 100 });
+    for (const row of result.rows) {
+      if (row.code) {
+        expect(row.code).toBe("ВЛАСНА ЛОГІСТИКА");
+      }
+    }
+  });
+
+  it("orders list should NOT contain ВЛАСНА ЛОГІСТИКА", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.orders.list({ pageSize: 200 });
+    for (const row of result.rows) {
+      if (row.code) {
+        expect(row.code).not.toBe("ВЛАСНА ЛОГІСТИКА");
+      }
+    }
   });
 });
 

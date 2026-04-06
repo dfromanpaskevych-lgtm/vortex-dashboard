@@ -2,11 +2,16 @@ import { Request, Response } from "express";
 import ExcelJS from "exceljs";
 import { getDb } from "./db";
 import { orders, orderItems } from "../drizzle/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, like, or, gte, lte, sql } from "drizzle-orm";
 
 function formatDate(ts: number | null | undefined): string {
   if (!ts) return "—";
   const d = new Date(ts * 1000);
+  return d.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function formatDateForTitle(dateStr: string): string {
+  const d = new Date(dateStr);
   return d.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
@@ -18,7 +23,59 @@ export async function handleExcelExport(req: Request, res: Response) {
       return;
     }
 
-    // Get all orders with items
+    // Parse query params for filters
+    const manager = req.query.manager as string | undefined;
+    const status = req.query.status as string | undefined;
+    const brand = req.query.brand as string | undefined;
+    const client = req.query.client as string | undefined;
+    const search = req.query.search as string | undefined;
+    const dateFromStr = req.query.dateFrom as string | undefined;
+    const dateToStr = req.query.dateTo as string | undefined;
+
+    // Build conditions
+    const conditions: any[] = [];
+
+    // Exclude ВЛАСНА ЛОГІСТИКА
+    conditions.push(sql`${orderItems.code} != 'ВЛАСНА ЛОГІСТИКА'`);
+
+    if (manager) {
+      conditions.push(like(orders.managerName, `%${manager}%`));
+    }
+    if (client) {
+      conditions.push(like(orders.clientName, `%${client}%`));
+    }
+    if (status) {
+      conditions.push(eq(orderItems.status, status));
+    }
+    if (brand) {
+      conditions.push(like(orderItems.brandName, `%${brand}%`));
+    }
+    if (dateFromStr) {
+      const dateFromTs = Math.floor(new Date(dateFromStr + "T00:00:00").getTime() / 1000);
+      conditions.push(gte(orders.createdTs, dateFromTs));
+    }
+    if (dateToStr) {
+      const dateToTs = Math.floor(new Date(dateToStr + "T23:59:59").getTime() / 1000);
+      conditions.push(lte(orders.createdTs, dateToTs));
+    }
+    if (search) {
+      conditions.push(
+        or(
+          like(orders.vortexOrderId, `%${search}%`),
+          like(orders.clientName, `%${search}%`),
+          like(orders.managerName, `%${search}%`),
+          like(orderItems.code, `%${search}%`),
+          like(orderItems.description, `%${search}%`),
+          like(orderItems.brandName, `%${search}%`),
+          like(orders.trackNumber, `%${search}%`),
+          like(orders.customerPhone, `%${search}%`)
+        )
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get filtered orders with items
     const rows = await db
       .select({
         vortexOrderId: orders.vortexOrderId,
@@ -52,17 +109,38 @@ export async function handleExcelExport(req: Request, res: Response) {
       })
       .from(orders)
       .leftJoin(orderItems, eq(orders.vortexOrderId, orderItems.vortexOrderId))
+      .where(whereClause)
       .orderBy(desc(orders.createdTs));
 
     // Create workbook
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Замовлення");
 
-    // Title row
-    const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - 3);
-    const titleText = `Звіт «Замовлення клієнтів» — ${startDate.toLocaleDateString("uk-UA")} - ${now.toLocaleDateString("uk-UA")}`;
+    // Title row — show actual date range if selected
+    let titleText: string;
+    if (dateFromStr && dateToStr) {
+      titleText = `Звіт «Замовлення клієнтів» — ${formatDateForTitle(dateFromStr)} - ${formatDateForTitle(dateToStr)}`;
+    } else if (dateFromStr) {
+      titleText = `Звіт «Замовлення клієнтів» — від ${formatDateForTitle(dateFromStr)}`;
+    } else if (dateToStr) {
+      titleText = `Звіт «Замовлення клієнтів» — до ${formatDateForTitle(dateToStr)}`;
+    } else {
+      titleText = `Звіт «Замовлення клієнтів» — всі дати`;
+    }
+
+    // Add filter info to title
+    const filterParts: string[] = [];
+    if (manager) filterParts.push(`Менеджер: ${manager}`);
+    if (status) filterParts.push(`Статус: ${status}`);
+    if (brand) filterParts.push(`Бренд: ${brand}`);
+    if (client) filterParts.push(`Клієнт: ${client}`);
+    if (search) filterParts.push(`Пошук: ${search}`);
+    if (filterParts.length > 0) {
+      titleText += ` | ${filterParts.join(", ")}`;
+    }
+
+    titleText += ` | ${rows.length} рядків`;
+
     worksheet.mergeCells("A1:AA1");
     const titleCell = worksheet.getCell("A1");
     titleCell.value = titleText;
@@ -140,9 +218,17 @@ export async function handleExcelExport(req: Request, res: Response) {
       worksheet.getColumn(i + 1).width = w;
     });
 
+    // Filename with date range
+    const now = new Date();
+    let filename = `Vortex_Orders`;
+    if (dateFromStr) filename += `_${dateFromStr}`;
+    if (dateToStr) filename += `_${dateToStr}`;
+    if (!dateFromStr && !dateToStr) filename += `_${now.toISOString().slice(0, 10)}`;
+    filename += `.xlsx`;
+
     // Send response
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename=Vortex_Orders_${now.toISOString().slice(0, 10)}.xlsx`);
+    res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
 
     await workbook.xlsx.write(res);
     res.end();

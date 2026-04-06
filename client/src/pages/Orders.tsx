@@ -19,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Search, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 
@@ -64,6 +64,18 @@ export default function Orders() {
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [pageSize, setPageSize] = useState(50);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  // Convert date strings to unix timestamps
+  const dateFromTs = useMemo(() => {
+    if (!dateFrom) return undefined;
+    return Math.floor(new Date(dateFrom + "T00:00:00").getTime() / 1000);
+  }, [dateFrom]);
+  const dateToTs = useMemo(() => {
+    if (!dateTo) return undefined;
+    return Math.floor(new Date(dateTo + "T23:59:59").getTime() / 1000);
+  }, [dateTo]);
 
   const queryInput = useMemo(() => ({
     search: search || undefined,
@@ -71,11 +83,13 @@ export default function Orders() {
     status: status || undefined,
     brand: brand || undefined,
     client: client || undefined,
+    dateFrom: dateFromTs,
+    dateTo: dateToTs,
     sortField,
     sortDir,
     page,
     pageSize,
-  }), [search, manager, status, brand, client, sortField, sortDir, page, pageSize]);
+  }), [search, manager, status, brand, client, dateFromTs, dateToTs, sortField, sortDir, page, pageSize]);
 
   const { data, isLoading } = trpc.orders.list.useQuery(queryInput);
   const { data: filterOptions } = trpc.orders.filterOptions.useQuery();
@@ -105,15 +119,26 @@ export default function Orders() {
     setStatus("");
     setBrand("");
     setClient("");
+    setDateFrom("");
+    setDateTo("");
     setPage(1);
   };
 
-  const hasFilters = search || manager || status || brand || client;
+  const hasFilters = search || manager || status || brand || client || dateFrom || dateTo;
 
   const handleExportExcel = () => {
     toast.info("Генерація Excel файлу...");
+    const params = new URLSearchParams();
+    if (manager) params.set("manager", manager);
+    if (status) params.set("status", status);
+    if (brand) params.set("brand", brand);
+    if (client) params.set("client", client);
+    if (search) params.set("search", search);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    const qs = params.toString();
     const link = document.createElement("a");
-    link.href = "/api/export/excel";
+    link.href = `/api/export/excel${qs ? `?${qs}` : ""}`;
     link.download = "orders.xlsx";
     link.click();
   };
@@ -204,6 +229,24 @@ export default function Orders() {
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Дата від</label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+                  className="h-9"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Дата до</label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+                  className="h-9"
+                />
+              </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Менеджер</label>
                 <Select value={manager} onValueChange={(v) => { setManager(v === "_all" ? "" : v); setPage(1); }}>

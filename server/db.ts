@@ -201,7 +201,10 @@ export async function getOrdersList(filters: OrderFilters) {
     })
     .from(orders)
     .leftJoin(orderItems, eq(orders.vortexOrderId, orderItems.vortexOrderId))
-    .where(inArray(orders.id, ids))
+    .where(and(
+      inArray(orders.id, ids),
+      sql`(${orderItems.code} IS NULL OR ${orderItems.code} != 'ВЛАСНА ЛОГІСТИКА')`
+    ))
     .orderBy(orderBy);
 
   return { rows, total };
