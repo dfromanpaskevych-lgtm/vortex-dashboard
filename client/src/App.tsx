@@ -10,6 +10,7 @@ import Orders from "./pages/Orders";
 import Changes from "./pages/Changes";
 import Sync from "./pages/Sync";
 import Logistics from "./pages/Logistics";
+import ApiManagement from "./pages/ApiManagement";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
         <Route path="/changes" component={Changes} />
         <Route path="/sync" component={Sync} />
         <Route path="/logistics" component={Logistics} />
+        <Route path="/api" component={ApiManagement} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

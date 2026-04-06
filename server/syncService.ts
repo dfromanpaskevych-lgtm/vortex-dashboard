@@ -3,6 +3,7 @@ import { getDb } from "./db";
 import { orders, orderItems, orderSnapshots, changeLogs, syncLogs } from "../drizzle/schema";
 import { fetchOrdersByDateRange, fetchRgByDateRange, getOrderById } from "./vortexClient";
 import { nanoid } from "nanoid";
+import { fireSyncWebhooks } from "./webhookService";
 
 let isSyncing = false;
 
@@ -422,6 +423,10 @@ export async function syncOrders(
     let modifiedCount = 0;
     let totalItems = 0;
 
+    // Collect webhook data during sync
+    const webhookNewOrders: Array<{ vortexOrderId: string; clientName: string; managerName: string; items: number }> = [];
+    const webhookModifiedOrders: Array<{ vortexOrderId: string; changes: Array<{ field: string; oldVal: string; newVal: string }> }> = [];
+
     // Process each fetched order
     for (const rawOrder of fetchedOrders) {
       const vortexOrderId = String(rawOrder.order_id || rawOrder.id || "");
@@ -476,6 +481,12 @@ export async function syncOrders(
         }
 
         newCount++;
+        webhookNewOrders.push({
+          vortexOrderId,
+          clientName: orderData.clientName || "",
+          managerName: orderData.managerName || "",
+          items: rawItems.length,
+        });
         console.log(`[Sync] NEW order ${vortexOrderId}: ${orderData.clientName}, ${rawItems.length} items`);
       } else {
         // ===== EXISTING ORDER — check for changes =====
@@ -519,6 +530,7 @@ export async function syncOrders(
           }
 
           modifiedCount++;
+          webhookModifiedOrders.push({ vortexOrderId, changes });
           console.log(`[Sync] MODIFIED order ${vortexOrderId}: ${changes.length} changes`);
           for (const c of changes) {
             console.log(`  - ${c.field}: "${c.oldVal}" → "${c.newVal}"`);
@@ -620,6 +632,19 @@ export async function syncOrders(
 
     const msg = `Synced ${fetchedOrders.length} orders (${newCount} new, ${modifiedCount} modified, ${rgEnriched} items enriched with supplier data)`;
     console.log(`[Sync] Completed: ${msg}`);
+
+    // Fire webhooks for all changes (non-blocking)
+    if (webhookNewOrders.length > 0 || webhookModifiedOrders.length > 0) {
+      console.log(`[Sync] Firing webhooks: ${webhookNewOrders.length} new, ${webhookModifiedOrders.length} modified`);
+      fireSyncWebhooks({
+        batchId,
+        newOrders: webhookNewOrders,
+        modifiedOrders: webhookModifiedOrders,
+      }).catch((err) => {
+        console.error(`[Sync] Webhook delivery error:`, err);
+      });
+    }
+
     isSyncing = false;
     return { batchId, success: true, message: msg };
   } catch (error) {

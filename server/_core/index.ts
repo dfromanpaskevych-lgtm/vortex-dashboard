@@ -9,6 +9,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleExcelExport } from "../exportExcel";
 import { resetStaleSyncLogs } from "../syncService";
+import { apiRouter } from "../apiRoutes";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -39,6 +40,8 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Excel export
   app.get("/api/export/excel", handleExcelExport);
+  // REST API v1 (requires API key)
+  app.use("/api/v1", apiRouter);
   // tRPC API
   app.use(
     "/api/trpc",

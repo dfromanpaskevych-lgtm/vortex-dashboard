@@ -90,3 +90,16 @@
 - [ ] Verify: total complete rows count (pending user check)
 - [x] Add date range filter (від/до) to Orders page
 - [x] Excel export respects selected date filter (all filters passed as query params)
+- [x] REST API: API Key auth middleware (Bearer token)
+- [x] REST API: DB table for api_keys (key, name, created, active)
+- [x] REST API: DB table for webhooks (url, secret, events, active)
+- [x] REST API: GET /api/v1/orders — full list with filters (date, manager, status, brand, client, search, pagination)
+- [x] REST API: GET /api/v1/orders/:id — single order with all items
+- [x] REST API: GET /api/v1/logistics — logistics entries
+- [x] REST API: GET /api/v1/changes — change history with filters
+- [x] Webhook: POST to registered URLs on sync changes (order.created, order.updated, order.deleted, item.updated)
+- [x] Webhook: include full order/item data + changed fields in payload
+- [x] Webhook: HMAC signature for payload verification
+- [x] UI: API Keys management page (generate, revoke, list)
+- [x] UI: Webhooks management page (add URL, select events, test, delete)
+- [x] API documentation page (inline on API & Webhooks page)

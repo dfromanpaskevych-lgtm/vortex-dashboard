@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Table2, History, RefreshCw, Truck } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Table2, History, RefreshCw, Truck, Webhook } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -33,6 +33,7 @@ const menuItems = [
   { icon: Truck, label: "Логістика", path: "/logistics" },
   { icon: History, label: "Історія змін", path: "/changes" },
   { icon: RefreshCw, label: "Синхронізація", path: "/sync" },
+  { icon: Webhook, label: "API & Webhooks", path: "/api" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

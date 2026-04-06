@@ -123,3 +123,31 @@ export const syncLogs = mysqlTable("sync_logs", {
 });
 
 export type SyncLog = typeof syncLogs.$inferSelect;
+
+// API Keys for external access
+export const apiKeys = mysqlTable("api_keys", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  keyHash: varchar("keyHash", { length: 128 }).notNull().unique(),
+  keyPrefix: varchar("keyPrefix", { length: 12 }).notNull(), // first 8 chars for display
+  active: boolean("active").default(true).notNull(),
+  lastUsedAt: timestamp("lastUsedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ApiKey = typeof apiKeys.$inferSelect;
+
+// Webhooks for push notifications
+export const webhooks = mysqlTable("webhooks", {
+  id: int("id").autoincrement().primaryKey(),
+  url: text("url").notNull(),
+  secret: varchar("secret", { length: 128 }).notNull(), // HMAC signing secret
+  events: json("events").notNull(), // ["order.created", "order.updated", "item.updated"]
+  active: boolean("active").default(true).notNull(),
+  lastDeliveredAt: timestamp("lastDeliveredAt"),
+  lastStatus: int("lastStatus"), // HTTP status of last delivery
+  failCount: int("failCount").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Webhook = typeof webhooks.$inferSelect;
