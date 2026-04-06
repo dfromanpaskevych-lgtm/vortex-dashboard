@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Table2, History, RefreshCw } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Table2, History, RefreshCw, Truck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -30,6 +30,7 @@ import { Button } from "./ui/button";
 const menuItems = [
   { icon: LayoutDashboard, label: "Дашборд", path: "/" },
   { icon: Table2, label: "Замовлення", path: "/orders" },
+  { icon: Truck, label: "Логістика", path: "/logistics" },
   { icon: History, label: "Історія змін", path: "/changes" },
   { icon: RefreshCw, label: "Синхронізація", path: "/sync" },
 ];

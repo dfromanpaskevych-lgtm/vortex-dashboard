@@ -9,6 +9,7 @@ import Home from "./pages/Home";
 import Orders from "./pages/Orders";
 import Changes from "./pages/Changes";
 import Sync from "./pages/Sync";
+import Logistics from "./pages/Logistics";
 
 function Router() {
   return (
@@ -18,6 +19,7 @@ function Router() {
         <Route path="/orders" component={Orders} />
         <Route path="/changes" component={Changes} />
         <Route path="/sync" component={Sync} />
+        <Route path="/logistics" component={Logistics} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

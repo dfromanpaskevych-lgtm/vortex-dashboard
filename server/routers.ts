@@ -3,7 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
-import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList } from "./db";
+import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList, getLogisticsList } from "./db";
 import { syncOrders, getSyncStatus, startScheduledSync, enrichBalances, getIsEnrichingBalances } from "./syncService";
 
 // Scheduled sync disabled — data loaded manually via load-march.mjs
@@ -63,6 +63,22 @@ export const appRouter = router({
           input?.pageSize || 50,
           input?.changeType
         );
+      }),
+  }),
+
+  logistics: router({
+    list: publicProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        manager: z.string().optional(),
+        client: z.string().optional(),
+        dateFrom: z.number().optional(),
+        dateTo: z.number().optional(),
+        page: z.number().optional(),
+        pageSize: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return getLogisticsList(input || {});
       }),
   }),
 

@@ -77,3 +77,14 @@
 - [x] Bug #2: Fixed — ВЛАСНА ЛОГІСТИКА from admin accounts also removed via Адмінка filter
 - [x] Bug #1/#2 fix: filter orders where manager_name contains 'Адмінка' in syncService
 - [x] Bug #1/#2 fix: delete existing Адмінка orders from DB (39 orders, 88 items removed)
+- [x] ROLLBACK: restored Адмінка orders via full March re-sync (2088 new orders restored)
+- [x] Bug #1: Investigated — Vortex creates EUR (real manager) + UAH (admin) for same client
+- [x] Bug #1: Fix — post-processing in syncService matches admin orders to paired EUR orders by client+timestamp
+- [x] Bug #1: 17 admin managers auto-fixed during re-sync, manual overrides for О. Кісільчук→В. Шмагленко, Є. Бардаш→М. Мілінічук, І. Гопанчук→І. Платонов
+- [x] Bug #2: ВЛАСНА ЛОГІСТИКА admin duplicates handled — admin orders get correct manager from paired EUR order
+- [x] UI: Created separate "Логістика" tab for ВЛАСНА ЛОГІСТИКА items (136 entries)
+- [x] UI: ВЛАСНА ЛОГІСТИКА hidden from main Orders tab
+- [x] UI: Logistics excluded from dashboard statistics (5980 items instead of 6116)
+- [x] Verify: invoices use different IDs in API (85xxx/86xxx/87xxx) vs document (56xxx/57xxx)
+- [x] Verify: only 1 Адмінка order remaining (60117 — no paired EUR order found)
+- [ ] Verify: total complete rows count (pending user check)

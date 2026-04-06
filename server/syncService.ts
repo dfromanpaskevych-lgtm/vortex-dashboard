@@ -249,6 +249,112 @@ function detectChanges(
 }
 
 /**
+ * Manual manager overrides for specific Vortex order IDs
+ * where the API returns the wrong manager and there's no paired EUR order to copy from.
+ */
+const MANUAL_MANAGER_OVERRIDES: Record<string, string> = {
+  "85899": "В. Шмагленко (@allparts_Vad_sh)",  // О. Кісільчук → В. Шмагленко (invoice 56962)
+  "87695": "М. Мілінічук (СТО)",              // Є. Бардаш → М. Мілінічук (invoice 57521)
+  "86762": "І. Платонов",                      // І. Гопанчук (адмінка) → І. Платонов (invoice 56966)
+};
+
+/**
+ * Admin manager patterns to detect.
+ */
+const ADMIN_PATTERNS = ["Адмінка", "Київ Адмін"];
+
+function isAdminManager(managerName: string): boolean {
+  return ADMIN_PATTERNS.some(p => managerName.includes(p));
+}
+
+/**
+ * Post-processing: fix admin manager names.
+ * For each admin order, find a paired non-admin order from the same client_id + same created timestamp.
+ * If found, copy the real manager name. Also apply manual overrides.
+ */
+async function fixAdminManagers(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  fetchedOrders: Array<Record<string, unknown>>
+): Promise<void> {
+  // Group fetched orders by client_id
+  const byClient: Record<string, Array<Record<string, unknown>>> = {};
+  for (const o of fetchedOrders) {
+    const cid = String(o.client_id || "");
+    if (!cid) continue;
+    if (!byClient[cid]) byClient[cid] = [];
+    byClient[cid].push(o);
+  }
+
+  let fixedByPair = 0;
+  let fixedByOverride = 0;
+  let fixedByDayPair = 0;
+
+  for (const [clientId, clientOrders] of Object.entries(byClient)) {
+    for (const order of clientOrders) {
+      const vortexOrderId = String(order.order_id || order.id || "");
+      const managerName = String(order.manager_name || "").trim();
+
+      // Check manual overrides first
+      if (MANUAL_MANAGER_OVERRIDES[vortexOrderId]) {
+        const correctManager = MANUAL_MANAGER_OVERRIDES[vortexOrderId];
+        if (managerName !== correctManager) {
+          await db
+            .update(orders)
+            .set({ managerName: correctManager })
+            .where(eq(orders.vortexOrderId, vortexOrderId));
+          console.log(`[Sync] OVERRIDE manager for order ${vortexOrderId}: "${managerName}" → "${correctManager}"`);
+          fixedByOverride++;
+        }
+        continue;
+      }
+
+      // Only process admin managers
+      if (!isAdminManager(managerName)) continue;
+
+      // Strategy 1: Find paired non-admin order with same client_id + same created timestamp
+      const created = String(order.created || "");
+      let pair = clientOrders.find(other => {
+        const otherId = String(other.order_id || other.id || "");
+        const otherMgr = String(other.manager_name || "").trim();
+        return otherId !== vortexOrderId &&
+               String(other.created || "") === created &&
+               !isAdminManager(otherMgr) &&
+               otherMgr !== "Сайт";
+      });
+
+      // Strategy 2: Find any non-admin order for the same client on the same day
+      if (!pair) {
+        pair = clientOrders.find(other => {
+          const otherId = String(other.order_id || other.id || "");
+          const otherMgr = String(other.manager_name || "").trim();
+          return otherId !== vortexOrderId &&
+                 !isAdminManager(otherMgr) &&
+                 otherMgr !== "Сайт";
+        });
+      }
+
+      if (pair) {
+        const correctManager = String(pair.manager_name || "").trim();
+        await db
+          .update(orders)
+          .set({ managerName: correctManager })
+          .where(eq(orders.vortexOrderId, vortexOrderId));
+        const strategy = String(pair.created || "") === created ? "same-timestamp" : "same-day";
+        console.log(`[Sync] FIX admin manager (${strategy}) for order ${vortexOrderId}: "${managerName}" → "${correctManager}"`);
+        if (strategy === "same-timestamp") fixedByPair++;
+        else fixedByDayPair++;
+      } else {
+        console.log(`[Sync] WARN: admin order ${vortexOrderId} (client=${clientId}, manager="${managerName}") has no paired non-admin order`);
+      }
+    }
+  }
+
+  if (fixedByPair + fixedByOverride + fixedByDayPair > 0) {
+    console.log(`[Sync] Manager fix summary: ${fixedByPair} by paired EUR order, ${fixedByDayPair} by same-day pair, ${fixedByOverride} by manual override`);
+  }
+}
+
+/**
  * Main sync function.
  * Accepts either:
  *   - days: number of days back from today (default 3)
@@ -321,16 +427,14 @@ export async function syncOrders(
       const vortexOrderId = String(rawOrder.order_id || rawOrder.id || "");
       if (!vortexOrderId) continue;
 
-      // ===== FILTER: skip 'Сайт' manager, 'Архів' status, and all 'Адмінка' accounts =====
+      // ===== FILTER: skip 'Сайт' manager and 'Архів' status =====
       const rawManagerName = String(rawOrder.manager_name || "").trim();
       const rawOrderStatus = String(rawOrder.status || rawOrder.order_status || "").trim();
       if (
         rawManagerName === "Сайт" ||
-        rawOrderStatus === "Архів" ||
-        rawManagerName.includes("Адмінка") ||
-        rawManagerName.includes("(Адмінка)")
+        rawOrderStatus === "Архів"
       ) {
-        console.log(`[Sync] SKIP order ${vortexOrderId}: manager="${rawManagerName}" (admin/site account)`);
+        console.log(`[Sync] SKIP order ${vortexOrderId}: manager="${rawManagerName}" status="${rawOrderStatus}"`);
         continue;
       }
 
@@ -435,6 +539,11 @@ export async function syncOrders(
         syncBatchId: batchId,
       });
     }
+
+    // ===== POST-PROCESSING: Fix admin manager names =====
+    // For orders where manager contains 'Адмінка', find paired EUR order
+    // from the same client_id + same created timestamp and copy the real manager.
+    await fixAdminManagers(db, fetchedOrders);
 
     // ===== ENRICH WITH RG DATA (supplier info) =====
     // NOTE: Balance enrichment (get_order_by_id) is done separately via enrichBalances()

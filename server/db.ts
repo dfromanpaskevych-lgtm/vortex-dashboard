@@ -88,11 +88,13 @@ export async function getOrdersList(filters: OrderFilters) {
   // Build where clause
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  // Build combined where for items join
+  // Build combined where for items join — excludes ВЛАСНА ЛОГІСТИКА from orders tab
   const buildFullWhere = () => {
+    const logisticsExclude = sql`${orderItems.code} != 'ВЛАСНА ЛОГІСТИКА'`;
     if (filters.status || filters.brand || filters.search) {
       return and(
         whereClause,
+        logisticsExclude,
         filters.status ? eq(orderItems.status, filters.status) : undefined,
         filters.brand ? like(orderItems.brandName, `%${filters.brand}%`) : undefined,
         filters.search
@@ -109,7 +111,7 @@ export async function getOrdersList(filters: OrderFilters) {
           : undefined
       );
     }
-    return whereClause;
+    return and(whereClause, logisticsExclude);
   };
 
   // Get total count
@@ -211,6 +213,9 @@ export async function getDashboardMetrics() {
   const db = await getDb();
   if (!db) return null;
 
+  // Exclude ВЛАСНА ЛОГІСТИКА items from dashboard stats
+  const noLogistics = sql`${orderItems.code} != 'ВЛАСНА ЛОГІСТИКА'`;
+
   // Total orders and sums
   const [totals] = await db.select({
     totalOrders: sql<number>`count(*)`,
@@ -219,11 +224,11 @@ export async function getDashboardMetrics() {
     totalSumEur: sql<number>`COALESCE(SUM(${orders.sumEur}), 0)`,
   }).from(orders);
 
-  // Total items
+  // Total items (excluding logistics)
   const [itemTotals] = await db.select({
     totalItems: sql<number>`count(*)`,
     totalQty: sql<number>`COALESCE(SUM(${orderItems.qty}), 0)`,
-  }).from(orderItems);
+  }).from(orderItems).where(noLogistics);
 
   // By manager
   const byManager = await db.select({
@@ -235,17 +240,17 @@ export async function getDashboardMetrics() {
     .orderBy(desc(sql`count(*)`))
     .limit(15);
 
-  // By status
+  // By status (excluding logistics)
   const byStatus = await db.select({
     status: orderItems.status,
     count: sql<number>`count(*)`,
   }).from(orderItems)
+    .where(noLogistics)
     .groupBy(orderItems.status)
     .orderBy(desc(sql`count(*)`));
 
   // By day (last 14 days)
   const fourteenDaysAgo = Math.floor(Date.now() / 1000) - 14 * 86400;
-  const dayExpr = sql`DATE(FROM_UNIXTIME(${orders.createdTs}))`;
   const byDay = await db.select({
     day: sql<string>`DATE(FROM_UNIXTIME(${orders.createdTs}))`.as('day_val'),
     orderCount: sql<number>`count(*)`,
@@ -255,11 +260,12 @@ export async function getDashboardMetrics() {
     .groupBy(sql`day_val`)
     .orderBy(asc(sql`day_val`));
 
-  // By brand (top 10)
+  // By brand (top 10, excluding logistics)
   const byBrand = await db.select({
     brand: orderItems.brandName,
     count: sql<number>`count(*)`,
   }).from(orderItems)
+    .where(noLogistics)
     .groupBy(orderItems.brandName)
     .orderBy(desc(sql`count(*)`))
     .limit(10);
@@ -271,6 +277,105 @@ export async function getDashboardMetrics() {
     byDay,
     byBrand,
   };
+}
+
+// ============ LOGISTICS QUERIES ============
+
+export async function getLogisticsList(filters: OrderFilters) {
+  const db = await getDb();
+  if (!db) return { rows: [], total: 0 };
+
+  const conditions: Array<ReturnType<typeof eq>> = [];
+
+  if (filters.manager) {
+    conditions.push(like(orders.managerName, `%${filters.manager}%`));
+  }
+  if (filters.client) {
+    conditions.push(like(orders.clientName, `%${filters.client}%`));
+  }
+  if (filters.dateFrom) {
+    conditions.push(gte(orders.createdTs, filters.dateFrom));
+  }
+  if (filters.dateTo) {
+    conditions.push(lte(orders.createdTs, filters.dateTo));
+  }
+
+  // Only ВЛАСНА ЛОГІСТИКА items
+  const logisticsFilter = sql`${orderItems.code} = 'ВЛАСНА ЛОГІСТИКА'`;
+
+  const buildFullWhere = () => {
+    const base = conditions.length > 0 ? and(...conditions) : undefined;
+    if (filters.search) {
+      return and(
+        base,
+        logisticsFilter,
+        or(
+          like(orders.vortexOrderId, `%${filters.search}%`),
+          like(orders.clientName, `%${filters.search}%`),
+          like(orders.managerName, `%${filters.search}%`),
+          like(orderItems.description, `%${filters.search}%`),
+          like(orders.trackNumber, `%${filters.search}%`)
+        )
+      );
+    }
+    return and(base, logisticsFilter);
+  };
+
+  // Get total count
+  const [countResult] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(orders)
+    .innerJoin(orderItems, eq(orders.vortexOrderId, orderItems.vortexOrderId))
+    .where(buildFullWhere());
+
+  const total = Number(countResult?.total || 0);
+
+  const page = filters.page || 1;
+  const pageSize = filters.pageSize || 50;
+  const offset = (page - 1) * pageSize;
+
+  const rows = await db
+    .select({
+      orderId: orders.id,
+      vortexOrderId: orders.vortexOrderId,
+      clientName: orders.clientName,
+      managerName: orders.managerName,
+      currency: orders.currency,
+      sumUah: orders.sumUah,
+      deliveryName: orders.deliveryName,
+      customerPhone: orders.customerPhone,
+      trackNumber: orders.trackNumber,
+      createdTs: orders.createdTs,
+      itemId: orderItems.id,
+      code: orderItems.code,
+      brandName: orderItems.brandName,
+      description: orderItems.description,
+      status: orderItems.status,
+      whName: orderItems.whName,
+      qty: orderItems.qty,
+      basePrice: orderItems.basePrice,
+      basePriceCurrency: orderItems.basePriceCurrency,
+      price: orderItems.price,
+      retailPrice: orderItems.retailPrice,
+      itemCurrency: orderItems.currency,
+      deliveryTime: orderItems.deliveryTime,
+      realDeliveryTime: orderItems.realDeliveryTime,
+      supplierName: orderItems.supplierName,
+      supplierTotal: orderItems.supplierTotal,
+      supplierCurrency: orderItems.supplierCurrency,
+      rgId: orderItems.rgId,
+      rgTimestamp: orderItems.rgTimestamp,
+      balanceCurrencyTotal: orders.balanceCurrencyTotal,
+      balanceCurrency: orders.balanceCurrency,
+    })
+    .from(orders)
+    .innerJoin(orderItems, eq(orders.vortexOrderId, orderItems.vortexOrderId))
+    .where(buildFullWhere())
+    .orderBy(desc(orders.createdTs))
+    .limit(pageSize)
+    .offset(offset);
+
+  return { rows, total };
 }
 
 // ============ CHANGE TRACKING ============
