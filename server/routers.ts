@@ -6,10 +6,10 @@ import { z } from "zod";
 import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList, getLogisticsList } from "./db";
 import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./apiAuth";
 import { createWebhook, listWebhooks, updateWebhook, deleteWebhook, type WebhookEvent } from "./webhookService";
-import { syncOrders, getSyncStatus, startScheduledSync, enrichBalances, getIsEnrichingBalances } from "./syncService";
+import { syncOrders, getSyncStatus, startScheduledSync, getNextScheduledSyncTime, enrichBalances, getIsEnrichingBalances } from "./syncService";
 
-// Scheduled sync disabled — data loaded manually via load-march.mjs
-// startScheduledSync();
+// Auto-sync: daily at 00:00 Kyiv time, last 7 days
+startScheduledSync();
 
 const WEBHOOK_EVENTS: WebhookEvent[] = [
   "order.created",
@@ -95,7 +95,8 @@ export const appRouter = router({
 
   sync: router({
     status: publicProcedure.query(async () => {
-      return getSyncStatus();
+      const status = await getSyncStatus();
+      return { ...status, nextScheduledSync: getNextScheduledSyncTime() };
     }),
 
     trigger: publicProcedure
@@ -109,7 +110,7 @@ export const appRouter = router({
         const dateFrom = input?.dateFrom;
         const dateTo = input?.dateTo;
         // Fire and forget — runs day-by-day in background
-        syncOrders(days, dateFrom, dateTo);
+        syncOrders(days, dateFrom, dateTo, "manual");
         const label = dateFrom && dateTo
           ? `${new Date(dateFrom * 1000).toLocaleDateString("uk-UA")} — ${new Date(dateTo * 1000).toLocaleDateString("uk-UA")}`
           : `останні ${days} дні`;

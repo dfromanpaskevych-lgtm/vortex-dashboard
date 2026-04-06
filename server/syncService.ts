@@ -395,7 +395,8 @@ async function fixAdminManagers(
 export async function syncOrders(
   days = 3,
   dateFrom?: number,
-  dateTo?: number
+  dateTo?: number,
+  syncType: "manual" | "auto" = "manual"
 ): Promise<{ batchId: string; success: boolean; message: string }> {
   if (isSyncing) {
     return { batchId: "", success: false, message: "Sync already in progress" };
@@ -414,6 +415,7 @@ export async function syncOrders(
   await db.insert(syncLogs).values({
     batchId,
     status: "running",
+    syncType,
     ordersProcessed: 0,
     itemsProcessed: 0,
     newOrders: 0,
@@ -729,29 +731,61 @@ export async function syncOrders(
   }
 }
 
-// Scheduled sync - runs every 30 minutes
-let syncInterval: ReturnType<typeof setInterval> | null = null;
+// Scheduled sync - runs daily at 00:00 Kyiv time (UTC+3)
+let syncTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Returns milliseconds until next 00:00 Kyiv time (UTC+3).
+ */
+function msUntilMidnightKyiv(): number {
+  const now = new Date();
+  // Kyiv is UTC+3
+  const kyivOffset = 3 * 60 * 60 * 1000;
+  const kyivNow = new Date(now.getTime() + kyivOffset);
+  const nextMidnight = new Date(kyivNow);
+  nextMidnight.setUTCHours(0, 0, 0, 0);
+  nextMidnight.setUTCDate(nextMidnight.getUTCDate() + 1);
+  return nextMidnight.getTime() - kyivNow.getTime();
+}
 
 export function startScheduledSync() {
-  if (syncInterval) return;
+  if (syncTimeout) return;
 
-  console.log("[Sync] Starting scheduled sync (every 30 minutes)");
-  syncInterval = setInterval(async () => {
-    console.log("[Sync] Scheduled sync triggered");
-    try {
-      await syncOrders(3); // sync last 3 days
-    } catch (error) {
-      console.error("[Sync] Scheduled sync error:", error);
-    }
-  }, 30 * 60 * 1000); // 30 minutes
+  const scheduleNext = () => {
+    const delay = msUntilMidnightKyiv();
+    const nextRun = new Date(Date.now() + delay);
+    console.log(`[Sync] Next auto-sync scheduled at ${nextRun.toISOString()} (Kyiv 00:00)`);
+    syncTimeout = setTimeout(async () => {
+      syncTimeout = null;
+      console.log("[Sync] Auto daily sync triggered (00:00 Kyiv)");
+      try {
+        await syncOrders(7, undefined, undefined, "auto"); // sync last 7 days
+      } catch (error) {
+        console.error("[Sync] Auto sync error:", error);
+      }
+      // Schedule next day
+      scheduleNext();
+    }, delay);
+  };
+
+  scheduleNext();
 }
 
 export function stopScheduledSync() {
-  if (syncInterval) {
-    clearInterval(syncInterval);
-    syncInterval = null;
+  if (syncTimeout) {
+    clearTimeout(syncTimeout);
+    syncTimeout = null;
     console.log("[Sync] Scheduled sync stopped");
   }
+}
+
+/**
+ * Returns the next scheduled auto-sync time as ISO string, or null if not scheduled.
+ */
+export function getNextScheduledSyncTime(): string | null {
+  if (!syncTimeout) return null;
+  const delay = msUntilMidnightKyiv();
+  return new Date(Date.now() + delay).toISOString();
 }
 
 /**

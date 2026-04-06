@@ -125,3 +125,11 @@
 - [x] UI: add "Дата фіксації курсу" column to Orders table
 - [x] Excel: add "Дата фіксації курсу" column to export
 - [x] REST API: fixedRateDate confirmed in select query and item response
+- [x] Auto-sync: daily at 00:00 Kyiv time (UTC+3), last 7 days — ENABLED
+- [x] UI: show next scheduled sync time on Sync page
+- [ ] Deploy to production (pending user confirmation)
+- [x] Auto-sync: daily at 00:00 Kyiv time (UTC+3), last 7 days — ENABLED
+- [x] Sync logs: add syncType (auto/manual) — DB migration applied
+- [x] DB migration for enhanced sync_logs schema (0006_dear_krista_starr.sql)
+- [x] Sync UI: show type, start time, end time, duration, change counts per run
+- [ ] Deploy to production (pending user confirmation)

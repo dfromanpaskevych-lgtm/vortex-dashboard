@@ -1,0 +1,1 @@
+ALTER TABLE `sync_logs` ADD `syncType` enum('manual','auto') DEFAULT 'manual' NOT NULL;

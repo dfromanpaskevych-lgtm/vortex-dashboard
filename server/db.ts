@@ -465,7 +465,7 @@ export async function getFilterOptions() {
 
 // ============ SYNC LOGS ============
 
-export async function getSyncLogsList(limit = 20) {
+export async function getSyncLogsList(limit = 50) {
   const db = await getDb();
   if (!db) return [];
 

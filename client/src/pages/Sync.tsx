@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import {
   RefreshCw, CheckCircle2, XCircle, Loader2, Clock, Database,
-  CalendarDays, ChevronDown, Coins
+  CalendarDays, ChevronDown, Coins, Bot, User
 } from "lucide-react";
 import { toast } from "sonner";
 import type { DateRange } from "react-day-picker";
@@ -193,6 +193,16 @@ export default function Sync() {
                   )}
                 </>
               )}
+              {syncStatus?.nextScheduledSync && (
+                <div className="flex items-center justify-between border-t pt-3 mt-1">
+                  <span className="text-sm text-muted-foreground flex items-center gap-1">
+                    <Bot className="h-3 w-3" /> Авто-синхр.:
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(syncStatus.nextScheduledSync).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -333,19 +343,23 @@ export default function Sync() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead>Дата запуску</TableHead>
+                <TableHead className="whitespace-nowrap">Тип</TableHead>
+                <TableHead className="whitespace-nowrap">Початок</TableHead>
+                <TableHead className="whitespace-nowrap">Завершення</TableHead>
+                <TableHead className="whitespace-nowrap">Тривалість</TableHead>
                 <TableHead>Статус</TableHead>
-                <TableHead className="text-right">Замовлень</TableHead>
+                <TableHead className="text-right">Оброблено</TableHead>
                 <TableHead className="text-right">Нових</TableHead>
                 <TableHead className="text-right">Змінених</TableHead>
-                <TableHead>Повідомлення / Помилка</TableHead>
+                <TableHead className="text-right">Видалених</TableHead>
+                <TableHead>Помилка</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {logsLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 6 }).map((_, j) => (
+                    {Array.from({ length: 10 }).map((_, j) => (
                       <TableCell key={j}>
                         <div className="h-4 bg-muted animate-pulse rounded" />
                       </TableCell>
@@ -354,41 +368,65 @@ export default function Sync() {
                 ))
               ) : !syncLogs || syncLogs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     Синхронізацій ще не було
                   </TableCell>
                 </TableRow>
               ) : (
-                syncLogs.map((log: Record<string, unknown>) => (
-                  <TableRow key={String(log.id)} className="hover:bg-muted/30 transition-colors">
-                    <TableCell className="text-xs whitespace-nowrap">
-                      {new Date(log.startedAt as string).toLocaleString("uk-UA")}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          log.status === "completed" ? "default" :
-                          log.status === "failed" ? "destructive" : "secondary"
-                        }
-                        className="text-[10px]"
-                      >
-                        {log.status === "completed" ? (
-                          <><CheckCircle2 className="h-3 w-3 mr-1" /> Успішно</>
-                        ) : log.status === "failed" ? (
-                          <><XCircle className="h-3 w-3 mr-1" /> Помилка</>
-                        ) : (
-                          <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> В процесі</>
-                        )}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-right font-mono">{String(log.ordersProcessed || 0)}</TableCell>
-                    <TableCell className="text-xs text-right font-mono text-green-500">{String(log.newOrders || 0)}</TableCell>
-                    <TableCell className="text-xs text-right font-mono text-yellow-500">{String(log.modifiedOrders || 0)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground truncate max-w-[220px]" title={String(log.errorMessage || "")}>
-                      {String(log.errorMessage || "—")}
-                    </TableCell>
-                  </TableRow>
-                ))
+                syncLogs.map((log: Record<string, unknown>) => {
+                  const startedAt = log.startedAt ? new Date(log.startedAt as string) : null;
+                  const completedAt = log.completedAt ? new Date(log.completedAt as string) : null;
+                  const durationMs = startedAt && completedAt ? completedAt.getTime() - startedAt.getTime() : null;
+                  const durationStr = durationMs != null
+                    ? durationMs < 60000
+                      ? `${Math.round(durationMs / 1000)}с`
+                      : `${Math.floor(durationMs / 60000)}хв ${Math.round((durationMs % 60000) / 1000)}с`
+                    : log.status === "running" ? "..." : "—";
+                  return (
+                    <TableRow key={String(log.id)} className="hover:bg-muted/30 transition-colors">
+                      <TableCell>
+                        <Badge variant="outline" className="text-[10px] gap-1">
+                          {log.syncType === "auto" ? (
+                            <><Bot className="h-3 w-3" /> Авто</>
+                          ) : (
+                            <><User className="h-3 w-3" /> Ручна</>
+                          )}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {startedAt ? startedAt.toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {completedAt ? completedAt.toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-xs font-mono text-muted-foreground">{durationStr}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            log.status === "completed" ? "default" :
+                            log.status === "failed" ? "destructive" : "secondary"
+                          }
+                          className="text-[10px]"
+                        >
+                          {log.status === "completed" ? (
+                            <><CheckCircle2 className="h-3 w-3 mr-1" /> Успішно</>
+                          ) : log.status === "failed" ? (
+                            <><XCircle className="h-3 w-3 mr-1" /> Помилка</>
+                          ) : (
+                            <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> В процесі</>
+                          )}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-right font-mono">{String(log.ordersProcessed || 0)}</TableCell>
+                      <TableCell className="text-xs text-right font-mono text-green-500">{String(log.newOrders || 0)}</TableCell>
+                      <TableCell className="text-xs text-right font-mono text-yellow-500">{String(log.modifiedOrders || 0)}</TableCell>
+                      <TableCell className="text-xs text-right font-mono text-red-500">{String(log.deletedOrders || 0)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground truncate max-w-[180px]" title={String(log.errorMessage || "")}>
+                        {String(log.errorMessage || "—")}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
