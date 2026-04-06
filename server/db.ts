@@ -196,6 +196,8 @@ export async function getOrdersList(filters: OrderFilters) {
       supplierCurrency: orderItems.supplierCurrency,
       rgId: orderItems.rgId,
       rgTimestamp: orderItems.rgTimestamp,
+      fixedRate: orderItems.fixedRate,
+      fixedRateDate: orderItems.fixedRateDate,
       balanceCurrencyTotal: orders.balanceCurrencyTotal,
       balanceCurrency: orders.balanceCurrency,
     })
@@ -368,6 +370,8 @@ export async function getLogisticsList(filters: OrderFilters) {
       supplierCurrency: orderItems.supplierCurrency,
       rgId: orderItems.rgId,
       rgTimestamp: orderItems.rgTimestamp,
+      fixedRate: orderItems.fixedRate,
+      fixedRateDate: orderItems.fixedRateDate,
       balanceCurrencyTotal: orders.balanceCurrencyTotal,
       balanceCurrency: orders.balanceCurrency,
     })

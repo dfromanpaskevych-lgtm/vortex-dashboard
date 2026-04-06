@@ -152,6 +152,11 @@ export default function Orders() {
       const delta = row.basePrice && salePrice
         ? ((Number(salePrice) - Number(row.basePrice)) * qty).toFixed(2)
         : null;
+      // Base price in UAH: if fixedRate exists, basePrice × fixedRate; otherwise basePrice (assumed UAH)
+      const fixedRate = row.fixedRate ? Number(row.fixedRate) : null;
+      const basePriceUah = row.basePrice
+        ? (fixedRate && fixedRate > 0 ? (Number(row.basePrice) * fixedRate).toFixed(2) : null)
+        : null;
       return {
         num: row.vortexOrderId,
         manager: showText(row.managerName),
@@ -162,12 +167,14 @@ export default function Orders() {
         warehouse: showText(row.whName),
         created: formatDate(row.createdTs),
         arrival: formatDate(row.deliveryTime),
-        qty: row.qty || "—",
+        qty: row.qty || "\u2014",
         inputPrice: formatPrice(row.basePrice),
-        inputCurrency: row.basePriceCurrency ? row.basePriceCurrency.toUpperCase() : "—",
+        inputCurrency: row.basePriceCurrency ? row.basePriceCurrency.toUpperCase() : "\u2014",
+        basePriceUah: basePriceUah ? formatPrice(basePriceUah) : "\u2014",
+        fixedRate: fixedRate ? fixedRate.toFixed(2) : "\u2014",
         salePrice: formatPrice(salePrice),
-        delta: delta ? formatPrice(delta) : "—",
-        saleCurrency: row.itemCurrency ? row.itemCurrency.toUpperCase() : "—",
+        delta: delta ? formatPrice(delta) : "\u2014",
+        saleCurrency: row.itemCurrency ? row.itemCurrency.toUpperCase() : "\u2014",
         currentBalance: formatPrice(row.balanceCurrencyTotal),
         balanceCurrency: row.balanceCurrency ? row.balanceCurrency.toUpperCase() : "—",
         client: showText(row.clientName),
@@ -338,6 +345,8 @@ export default function Orders() {
                     <div className="flex items-center justify-end gap-1">Вхідна ціна <SortIcon field="inputPrice" /></div>
                   </TableHead>
                   <TableHead className="w-[70px] whitespace-nowrap">Валюта вхід.</TableHead>
+                  <TableHead className="w-[100px] whitespace-nowrap text-right">Вхідна (грн)</TableHead>
+                  <TableHead className="w-[70px] whitespace-nowrap text-right">Курс</TableHead>
                   <TableHead className="w-[90px] cursor-pointer whitespace-nowrap text-right" onClick={() => handleSort("salePrice")}>
                     <div className="flex items-center justify-end gap-1">Продаж <SortIcon field="salePrice" /></div>
                   </TableHead>
@@ -363,7 +372,7 @@ export default function Orders() {
                 {isLoading ? (
                   Array.from({ length: 10 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 27 }).map((_, j) => (
+                      {Array.from({ length: 29 }).map((_, j) => (
                         <TableCell key={j}>
                           <div className="h-4 bg-muted animate-pulse rounded" />
                         </TableCell>
@@ -372,7 +381,7 @@ export default function Orders() {
                   ))
                 ) : tableRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={27} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={29} className="text-center py-12 text-muted-foreground">
                       Замовлення не знайдено
                     </TableCell>
                   </TableRow>
@@ -397,6 +406,8 @@ export default function Orders() {
                       <TableCell className="text-xs text-right">{row.qty}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{row.inputPrice}</TableCell>
                       <TableCell className="text-xs uppercase">{row.inputCurrency}</TableCell>
+                      <TableCell className="text-xs text-right font-mono">{row.basePriceUah}</TableCell>
+                      <TableCell className="text-xs text-right font-mono text-muted-foreground">{row.fixedRate}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{row.salePrice}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{row.delta}</TableCell>
                       <TableCell className="text-xs uppercase">{row.saleCurrency}</TableCell>

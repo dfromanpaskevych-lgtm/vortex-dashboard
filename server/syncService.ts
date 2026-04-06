@@ -4,6 +4,7 @@ import { orders, orderItems, orderSnapshots, changeLogs, syncLogs } from "../dri
 import { fetchOrdersByDateRange, fetchRgByDateRange, getOrderById } from "./vortexClient";
 import { nanoid } from "nanoid";
 import { fireSyncWebhooks } from "./webhookService";
+import { getExchangeRate, timestampToDateStr } from "./currencyService";
 
 let isSyncing = false;
 
@@ -56,6 +57,7 @@ function mapOrderToDb(rawOrder: Record<string, unknown>) {
 
 /**
  * Helper: map raw Vortex item to DB fields.
+ * fixedRate/fixedRateDate are added separately after async currency lookup.
  */
 function mapItemToDb(item: Record<string, unknown>, orderId: number, vortexOrderId: string) {
   return {
@@ -81,6 +83,34 @@ function mapItemToDb(item: Record<string, unknown>, orderId: number, vortexOrder
     managerNote: String(item.manager_note || ""),
     returnPeriod: String(item.return_period || "0"),
   };
+}
+
+/**
+ * Get fixedRate for an item based on its currency and order creation date.
+ * For UAH items, rate = 1. For EUR/USD, fetch from Monobank/NBU.
+ * If item already has a fixedRate in DB, preserve it (immutable).
+ */
+async function getFixedRateForItem(
+  basePriceCurrency: string,
+  orderCreatedTs: number | null,
+  existingFixedRate?: string | null
+): Promise<{ fixedRate: string | null; fixedRateDate: string | null }> {
+  // If already has a fixed rate, keep it (immutable)
+  if (existingFixedRate && Number(existingFixedRate) > 0) {
+    return { fixedRate: null, fixedRateDate: null }; // signal: don't overwrite
+  }
+
+  const cur = (basePriceCurrency || "uah").toUpperCase();
+  if (cur === "UAH" || cur === "ГРН") {
+    return { fixedRate: "1.0000", fixedRateDate: orderCreatedTs ? timestampToDateStr(orderCreatedTs) : new Date().toISOString().slice(0, 10) };
+  }
+
+  const dateStr = orderCreatedTs ? timestampToDateStr(orderCreatedTs) : new Date().toISOString().slice(0, 10);
+  const rate = await getExchangeRate(cur, dateStr);
+  if (rate !== null) {
+    return { fixedRate: String(rate.toFixed(4)), fixedRateDate: dateStr };
+  }
+  return { fixedRate: null, fixedRateDate: dateStr };
 }
 
 /**
@@ -473,10 +503,16 @@ export async function syncOrders(
           syncBatchId: batchId,
         });
 
-        // Insert items (skip archived)
+        // Insert items (skip archived) + fix currency rate
+        const orderCreatedTs = rawOrder.created ? Number(rawOrder.created) : null;
         for (const item of rawItems) {
           if (String(item.status || "").trim() === "archived") continue;
-          await db.insert(orderItems).values(mapItemToDb(item, orderId, vortexOrderId));
+          const itemData = mapItemToDb(item, orderId, vortexOrderId);
+          const rateInfo = await getFixedRateForItem(itemData.basePriceCurrency, orderCreatedTs);
+          await db.insert(orderItems).values({
+            ...itemData,
+            ...(rateInfo.fixedRate ? { fixedRate: rateInfo.fixedRate, fixedRateDate: rateInfo.fixedRateDate } : {}),
+          });
           totalItems++;
         }
 
@@ -521,11 +557,39 @@ export async function syncOrders(
             });
           }
 
-          // Replace items (skip archived)
+          // Replace items (skip archived) + preserve/set currency rate
+          // First, collect existing fixed rates by orderItemId so we can preserve them
+          const existingRates: Record<string, { fixedRate: string | null; fixedRateDate: string | null }> = {};
+          for (const ei of existingItems) {
+            const eiAny = ei as Record<string, unknown>;
+            if (eiAny.fixedRate) {
+              existingRates[String(eiAny.orderItemId || "")] = {
+                fixedRate: String(eiAny.fixedRate),
+                fixedRateDate: eiAny.fixedRateDate ? String(eiAny.fixedRateDate) : null,
+              };
+            }
+          }
           await db.delete(orderItems).where(eq(orderItems.vortexOrderId, vortexOrderId));
+          const orderCreatedTsMod = existing.createdTs;
           for (const item of rawItems) {
             if (String(item.status || "").trim() === "archived") continue;
-            await db.insert(orderItems).values(mapItemToDb(item, existing.id, vortexOrderId));
+            const itemData = mapItemToDb(item, existing.id, vortexOrderId);
+            const itemId = String(item.order_item_id || "");
+            // Preserve existing rate if available (immutable)
+            const preserved = existingRates[itemId];
+            if (preserved?.fixedRate) {
+              await db.insert(orderItems).values({
+                ...itemData,
+                fixedRate: preserved.fixedRate,
+                fixedRateDate: preserved.fixedRateDate,
+              });
+            } else {
+              const rateInfo = await getFixedRateForItem(itemData.basePriceCurrency, orderCreatedTsMod ?? null);
+              await db.insert(orderItems).values({
+                ...itemData,
+                ...(rateInfo.fixedRate ? { fixedRate: rateInfo.fixedRate, fixedRateDate: rateInfo.fixedRateDate } : {}),
+              });
+            }
             totalItems++;
           }
 

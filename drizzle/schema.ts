@@ -78,6 +78,9 @@ export const orderItems = mysqlTable("order_items", {
   supplierCurrency: varchar("supplierCurrency", { length: 10 }),
   rgId: varchar("rgId", { length: 32 }),
   rgTimestamp: bigint("rgTimestamp", { mode: "number" }),
+  // Currency exchange rate fixed at order creation date
+  fixedRate: decimal("fixedRate", { precision: 10, scale: 4 }),
+  fixedRateDate: varchar("fixedRateDate", { length: 10 }), // YYYY-MM-DD
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -151,3 +154,15 @@ export const webhooks = mysqlTable("webhooks", {
 });
 
 export type Webhook = typeof webhooks.$inferSelect;
+
+// Currency rates cache
+export const currencyRates = mysqlTable("currency_rates", {
+  id: int("id").autoincrement().primaryKey(),
+  date: varchar("date", { length: 10 }).notNull(), // YYYY-MM-DD
+  currency: varchar("currency", { length: 5 }).notNull(), // USD, EUR
+  rate: decimal("rate", { precision: 10, scale: 4 }).notNull(),
+  source: varchar("source", { length: 20 }).notNull(), // monobank, nbu
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CurrencyRate = typeof currencyRates.$inferSelect;

@@ -112,3 +112,13 @@
 - [x] Investigated: price and base_price are PER UNIT; sumUah = SUM(price×qty) confirmed for all 20 tested orders
 - [x] Fix: delta = (price - basePrice) × qty in UI, Excel export, and REST API
 - [x] Delta calculation is currency-agnostic: simple subtraction × qty (matches Vortex behavior)
+- [x] Monobank API integration: fetch EUR/USD→UAH rates (Monobank rateSell + NBU fallback)
+- [x] Currency rates cache table in DB (date, currency, rate, source)
+- [x] DB migration: add fixedRate, fixedRateDate columns to order_items
+- [x] Fix rate at order creation date (createdTs) during sync
+- [x] Rate is immutable once set — only base_price can change, rate stays
+- [x] Backfill skipped — user confirmed Feb/March don't need rates
+- [x] UI: show base price in UAH (basePrice × fixedRate) and Курс columns
+- [x] Excel export: include Вхідна (грн) and Курс columns
+- [x] REST API: include fixedRate, fixedRateDate, basePriceUah in item response
+- [x] Vitest tests for currency service (15 tests, all passing)

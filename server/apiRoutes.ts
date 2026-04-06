@@ -151,6 +151,8 @@ apiRouter.get("/orders", async (req: Request, res: Response) => {
         supplierCurrency: orderItems.supplierCurrency,
         rgId: orderItems.rgId,
         rgTimestamp: orderItems.rgTimestamp,
+        fixedRate: orderItems.fixedRate,
+        fixedRateDate: orderItems.fixedRateDate,
       })
       .from(orders)
       .leftJoin(orderItems, eq(orders.vortexOrderId, orderItems.vortexOrderId))
@@ -217,6 +219,9 @@ apiRouter.get("/orders", async (req: Request, res: Response) => {
           basePrice: row.basePrice,
           basePriceCurrency: row.basePriceCurrency,
           delta: itemDelta,
+          fixedRate: row.fixedRate ? Number(row.fixedRate) : null,
+          fixedRateDate: row.fixedRateDate || null,
+          basePriceUah: itemBase != null && row.fixedRate ? (itemBase * Number(row.fixedRate)).toFixed(2) : null,
           retailPrice: row.retailPrice,
           currency: row.itemCurrency,
           deliveryTime: row.deliveryTime,
@@ -293,7 +298,9 @@ apiRouter.get("/orders/:id", async (req: Request, res: Response) => {
       const itemPrice = item.price ? Number(item.price) : null;
       const itemBase = item.basePrice ? Number(item.basePrice) : null;
       const delta = itemPrice != null && itemBase != null ? ((itemPrice - itemBase) * itemQty).toFixed(2) : null;
-      return { ...item, delta };
+      const fRate = item.fixedRate ? Number(item.fixedRate) : null;
+      const basePriceUah = itemBase != null && fRate && fRate > 0 ? (itemBase * fRate).toFixed(2) : null;
+      return { ...item, delta, basePriceUah };
     });
 
     res.json({

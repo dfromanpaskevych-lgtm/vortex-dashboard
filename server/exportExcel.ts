@@ -104,6 +104,8 @@ export async function handleExcelExport(req: Request, res: Response) {
         supplierTotal: orderItems.supplierTotal,
         supplierCurrency: orderItems.supplierCurrency,
         rgTimestamp: orderItems.rgTimestamp,
+        fixedRate: orderItems.fixedRate,
+        fixedRateDate: orderItems.fixedRateDate,
         balanceCurrencyTotal: orders.balanceCurrencyTotal,
         balanceCurrency: orders.balanceCurrency,
       })
@@ -141,7 +143,7 @@ export async function handleExcelExport(req: Request, res: Response) {
 
     titleText += ` | ${rows.length} рядків`;
 
-    worksheet.mergeCells("A1:AA1");
+    worksheet.mergeCells("A1:AC1");
     const titleCell = worksheet.getCell("A1");
     titleCell.value = titleText;
     titleCell.font = { bold: true, size: 14 };
@@ -151,6 +153,7 @@ export async function handleExcelExport(req: Request, res: Response) {
     const headers = [
       "№", "Менеджер", "Бренд", "Артикул", "Опис", "Статус", "Склад",
       "Оформлено", "Прибуття", "К-сть", "Вхідна ціна", "Валюта вхід.",
+      "Вхідна (грн)", "Курс",
       "Продаж", "Дельта", "Валюта продаж", "Поточний баланс", "Валюта баланс",
       "Клієнт", "Тип клієнта", "Група націнок", "Доставка", "Номер телефону",
       "Документ видачі", "Дата видачі", "Баланс постач.", "Валюта постач.",
@@ -184,6 +187,10 @@ export async function handleExcelExport(req: Request, res: Response) {
       const delta = bp != null && sp != null ? (sp - bp) * qty : null;
       const phone = row.customerPhone && row.customerPhone.trim() !== "" ? row.customerPhone.trim() : "немає номеру";
 
+      // Calculate base price in UAH using fixedRate
+      const fixedRate = row.fixedRate ? Number(row.fixedRate) : null;
+      const basePriceUah = bp != null && fixedRate && fixedRate > 0 ? bp * fixedRate : null;
+
       worksheet.addRow([
         row.vortexOrderId,
         row.managerName?.trim() || "—",
@@ -197,6 +204,8 @@ export async function handleExcelExport(req: Request, res: Response) {
         row.qty || "—",
         bp != null ? bp : "—",
         row.basePriceCurrency ? row.basePriceCurrency.toUpperCase() : "—",
+        basePriceUah != null ? Math.round(basePriceUah * 100) / 100 : "—",
+        fixedRate != null ? fixedRate : "—",
         sp != null ? sp : "—",
         delta != null ? delta : "—",
         row.itemCurrency ? row.itemCurrency.toUpperCase() : "—",
@@ -216,7 +225,7 @@ export async function handleExcelExport(req: Request, res: Response) {
     }
 
     // Column widths
-    const widths = [12, 35, 15, 15, 30, 12, 25, 12, 12, 8, 12, 10, 12, 10, 10, 14, 10, 30, 12, 14, 20, 15, 18, 12, 14, 10, 18];
+    const widths = [12, 35, 15, 15, 30, 12, 25, 12, 12, 8, 12, 10, 12, 8, 12, 10, 10, 14, 10, 30, 12, 14, 20, 15, 18, 12, 14, 10, 18];
     widths.forEach((w, i) => {
       worksheet.getColumn(i + 1).width = w;
     });
