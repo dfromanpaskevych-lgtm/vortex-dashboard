@@ -71,3 +71,9 @@
 - [x] Filter: skip order items with status='archived' during sync (not whole orders)
 - [x] Delete existing archived items from DB (86 items removed)
 - [x] Delete existing orders with manager='Сайт' from DB (86 orders removed)
+- [x] Bug #1: Investigated — API returns separate orders per currency; admin accounts create UAH duplicates
+- [x] Bug #1: Fix — filter all orders where manager_name contains 'Адмінка' (covers all admin accounts)
+- [x] Bug #1: Re-sync not needed — Адмінка orders deleted from DB (39 orders removed)
+- [x] Bug #2: Fixed — ВЛАСНА ЛОГІСТИКА from admin accounts also removed via Адмінка filter
+- [x] Bug #1/#2 fix: filter orders where manager_name contains 'Адмінка' in syncService
+- [x] Bug #1/#2 fix: delete existing Адмінка orders from DB (39 orders, 88 items removed)

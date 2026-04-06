@@ -321,10 +321,16 @@ export async function syncOrders(
       const vortexOrderId = String(rawOrder.order_id || rawOrder.id || "");
       if (!vortexOrderId) continue;
 
-      // ===== FILTER: skip 'Сайт' manager and 'Архів' status =====
+      // ===== FILTER: skip 'Сайт' manager, 'Архів' status, and all 'Адмінка' accounts =====
       const rawManagerName = String(rawOrder.manager_name || "").trim();
       const rawOrderStatus = String(rawOrder.status || rawOrder.order_status || "").trim();
-      if (rawManagerName === "Сайт" || rawOrderStatus === "Архів") {
+      if (
+        rawManagerName === "Сайт" ||
+        rawOrderStatus === "Архів" ||
+        rawManagerName.includes("Адмінка") ||
+        rawManagerName.includes("(Адмінка)")
+      ) {
+        console.log(`[Sync] SKIP order ${vortexOrderId}: manager="${rawManagerName}" (admin/site account)`);
         continue;
       }
 
