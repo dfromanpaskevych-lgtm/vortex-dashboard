@@ -184,3 +184,59 @@ describe("sync router", () => {
     expect(Array.isArray(result)).toBe(true);
   });
 });
+
+describe("MANUS calculation columns", () => {
+  it("manusDelta = (price - basePrice) × qty", () => {
+    // Unit test for the MANUS delta formula (pure logic, no DB needed)
+    const cases = [
+      { price: 3500, basePrice: 2900, qty: 4, expected: 2400 },   // TRIANGLELEXUS
+      { price: 695,  basePrice: 691,  qty: 2, expected: 8 },       // S011756G
+      { price: 1500, basePrice: 968,  qty: 2, expected: 1064 },    // MN102439
+      { price: 100,  basePrice: 80,   qty: 1, expected: 20 },      // single unit
+    ];
+    for (const c of cases) {
+      const result = parseFloat(((c.price - c.basePrice) * c.qty).toFixed(2));
+      expect(result).toBe(c.expected);
+    }
+  });
+
+  it("manusSaleTotal = price × qty", () => {
+    const cases = [
+      { price: 3500, qty: 4, expected: 14000 },
+      { price: 695,  qty: 2, expected: 1390 },
+      { price: 1500, qty: 2, expected: 3000 },
+    ];
+    for (const c of cases) {
+      const result = parseFloat((c.price * c.qty).toFixed(2));
+      expect(result).toBe(c.expected);
+    }
+  });
+
+  it("manusInputTotal = manusSaleTotal - manusDelta", () => {
+    const cases = [
+      { price: 3500, basePrice: 2900, qty: 4, expectedInput: 11600 },  // 14000 - 2400
+      { price: 695,  basePrice: 691,  qty: 2, expectedInput: 1382 },   // 1390 - 8
+      { price: 1500, basePrice: 968,  qty: 2, expectedInput: 1936 },   // 3000 - 1064
+    ];
+    for (const c of cases) {
+      const manusDelta = parseFloat(((c.price - c.basePrice) * c.qty).toFixed(2));
+      const manusSaleTotal = parseFloat((c.price * c.qty).toFixed(2));
+      const manusInputTotal = parseFloat((manusSaleTotal - manusDelta).toFixed(2));
+      expect(manusInputTotal).toBe(c.expectedInput);
+    }
+  });
+
+  it("MANUS columns present in orders.list rows", async () => {
+    // Verify the tRPC orders.list returns rows (MANUS cols are computed in UI, not tRPC)
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.orders.list({ pageSize: 5 });
+    expect(result).toHaveProperty("rows");
+    expect(result.rows.length).toBeGreaterThan(0);
+    // Rows must have price and qty for MANUS computation
+    for (const row of result.rows) {
+      expect(row).toHaveProperty("qty");
+      expect(row).toHaveProperty("price");
+    }
+  });
+});

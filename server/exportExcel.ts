@@ -158,6 +158,7 @@ export async function handleExcelExport(req: Request, res: Response) {
       "Клієнт", "Тип клієнта", "Група націнок", "Доставка", "Номер телефону",
       "Документ видачі", "Дата видачі", "Баланс постач.", "Валюта постач.",
       "Дата оплати накладної",
+      "MANUS Дельта", "MANUS Продажна", "MANUS Вхідна",
     ];
 
     const headerRow = worksheet.addRow(headers);
@@ -222,11 +223,15 @@ export async function handleExcelExport(req: Request, res: Response) {
         row.supplierTotal ? Number(row.supplierTotal) : "—",
         row.supplierCurrency ? row.supplierCurrency.toUpperCase() : "—",
         formatDate(row.rgTimestamp),
+        // MANUS columns
+        bp != null && sp != null ? Math.round((sp - bp) * qty * 100) / 100 : "—",
+        sp != null ? Math.round(sp * qty * 100) / 100 : "—",
+        sp != null && bp != null ? Math.round((sp * qty - (sp - bp) * qty) * 100) / 100 : "—",
       ]);
     }
 
     // Column widths
-    const widths = [12, 35, 15, 15, 30, 12, 25, 12, 12, 8, 12, 10, 12, 8, 12, 10, 10, 14, 10, 30, 12, 14, 20, 15, 18, 12, 14, 10, 18];
+    const widths = [12, 35, 15, 15, 30, 12, 25, 12, 12, 8, 12, 10, 12, 8, 12, 10, 10, 14, 10, 30, 12, 14, 20, 15, 18, 12, 14, 10, 18, 14, 14, 14];
     widths.forEach((w, i) => {
       worksheet.getColumn(i + 1).width = w;
     });

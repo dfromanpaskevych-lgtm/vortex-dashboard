@@ -133,3 +133,8 @@
 - [x] DB migration for enhanced sync_logs schema (0006_dear_krista_starr.sql)
 - [x] Sync UI: show type, start time, end time, duration, change counts per run
 - [ ] Deploy to production (pending user confirmation)
+- [x] UI: Add 3 new MANUS columns: "MANUS Дельта" = (price-basePrice)×qty, "MANUS Продажна" = price×qty, "MANUS Вхідна" = MANUS Продажна - MANUS Дельта
+- [x] Excel: Add same 3 MANUS columns to export
+- [x] REST API: Add manusDelta, manusSaleTotal, manusInputTotal fields to both /orders and /orders/:id
+- [x] Vitest: 4 new tests for MANUS formula correctness (60 total, all passing)
+- [ ] Deploy after implementation

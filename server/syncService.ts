@@ -412,6 +412,7 @@ export async function syncOrders(
   }
 
   // Create sync log entry
+  const startedAt = new Date();
   await db.insert(syncLogs).values({
     batchId,
     status: "running",
@@ -421,6 +422,7 @@ export async function syncOrders(
     newOrders: 0,
     modifiedOrders: 0,
     deletedOrders: 0,
+    startedAt,
   });
 
   try {

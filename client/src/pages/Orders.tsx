@@ -157,6 +157,14 @@ export default function Orders() {
       const basePriceUah = row.basePrice
         ? (fixedRate && fixedRate > 0 ? (Number(row.basePrice) * fixedRate).toFixed(2) : null)
         : null;
+      // MANUS розрахунок на кількість
+      const manusDelta = row.basePrice && salePrice
+        ? ((Number(salePrice) - Number(row.basePrice)) * qty)
+        : null;
+      const manusSaleTotal = salePrice ? (Number(salePrice) * qty) : null;
+      const manusInputTotal = manusSaleTotal != null && manusDelta != null
+        ? (manusSaleTotal - manusDelta)
+        : null;
       return {
         num: row.vortexOrderId,
         manager: showText(row.managerName),
@@ -188,6 +196,9 @@ export default function Orders() {
         supplierBalance: formatPrice(row.supplierTotal),
         supplierCurrency: row.supplierCurrency ? row.supplierCurrency.toUpperCase() : "\u2014",
         invoicePaymentDate: formatDate(row.rgTimestamp),
+        manusDelta: manusDelta != null ? formatPrice(manusDelta.toFixed(2)) : "\u2014",
+        manusSaleTotal: manusSaleTotal != null ? formatPrice(manusSaleTotal.toFixed(2)) : "\u2014",
+        manusInputTotal: manusInputTotal != null ? formatPrice(manusInputTotal.toFixed(2)) : "\u2014",
       };
     });
   }, [rows]);
@@ -368,13 +379,16 @@ export default function Orders() {
                   <TableHead className="w-[100px] whitespace-nowrap text-right">Баланс постач.</TableHead>
                   <TableHead className="w-[80px] whitespace-nowrap">Валюта постач.</TableHead>
                   <TableHead className="w-[130px] whitespace-nowrap">Дата оплати накладної</TableHead>
+                  <TableHead className="w-[110px] whitespace-nowrap text-right bg-blue-950/30 text-blue-300">MANUS Дельта</TableHead>
+                  <TableHead className="w-[110px] whitespace-nowrap text-right bg-blue-950/30 text-blue-300">MANUS Продажна</TableHead>
+                  <TableHead className="w-[110px] whitespace-nowrap text-right bg-blue-950/30 text-blue-300">MANUS Вхідна</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 10 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 29 }).map((_, j) => (
+                      {Array.from({ length: 32 }).map((_, j) => (
                         <TableCell key={j}>
                           <div className="h-4 bg-muted animate-pulse rounded" />
                         </TableCell>
@@ -383,7 +397,7 @@ export default function Orders() {
                   ))
                 ) : tableRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={30} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={33} className="text-center py-12 text-muted-foreground">
                       Замовлення не знайдено
                     </TableCell>
                   </TableRow>
@@ -426,6 +440,9 @@ export default function Orders() {
                       <TableCell className="text-xs text-right font-mono text-muted-foreground">{row.supplierBalance}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{row.supplierCurrency}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{row.invoicePaymentDate}</TableCell>
+                      <TableCell className="text-xs text-right font-mono font-semibold text-blue-400 bg-blue-950/20">{row.manusDelta}</TableCell>
+                      <TableCell className="text-xs text-right font-mono font-semibold text-blue-400 bg-blue-950/20">{row.manusSaleTotal}</TableCell>
+                      <TableCell className="text-xs text-right font-mono font-semibold text-blue-400 bg-blue-950/20">{row.manusInputTotal}</TableCell>
                     </TableRow>
                   ))
                 )}

@@ -206,6 +206,10 @@ apiRouter.get("/orders", async (req: Request, res: Response) => {
         const itemBase = row.basePrice ? Number(row.basePrice) : null;
         // Vortex delta = (price_per_unit - base_price_per_unit) × qty
         const itemDelta = itemPrice != null && itemBase != null ? ((itemPrice - itemBase) * itemQty).toFixed(2) : null;
+        // MANUS розрахунок на кількість
+        const manusDelta = itemPrice != null && itemBase != null ? parseFloat(((itemPrice - itemBase) * itemQty).toFixed(2)) : null;
+        const manusSaleTotal = itemPrice != null ? parseFloat((itemPrice * itemQty).toFixed(2)) : null;
+        const manusInputTotal = manusSaleTotal != null && manusDelta != null ? parseFloat((manusSaleTotal - manusDelta).toFixed(2)) : null;
         ordersMap.get(key)!.items.push({
           orderItemId: row.orderItemId,
           code: row.code,
@@ -219,6 +223,9 @@ apiRouter.get("/orders", async (req: Request, res: Response) => {
           basePrice: row.basePrice,
           basePriceCurrency: row.basePriceCurrency,
           delta: itemDelta,
+          manusDelta,
+          manusSaleTotal,
+          manusInputTotal,
           fixedRate: row.fixedRate ? Number(row.fixedRate) : null,
           fixedRateDate: row.fixedRateDate || null,
           basePriceUah: itemBase != null && row.fixedRate ? (itemBase * Number(row.fixedRate)).toFixed(2) : null,
@@ -300,7 +307,11 @@ apiRouter.get("/orders/:id", async (req: Request, res: Response) => {
       const delta = itemPrice != null && itemBase != null ? ((itemPrice - itemBase) * itemQty).toFixed(2) : null;
       const fRate = item.fixedRate ? Number(item.fixedRate) : null;
       const basePriceUah = itemBase != null && fRate && fRate > 0 ? (itemBase * fRate).toFixed(2) : null;
-      return { ...item, delta, basePriceUah };
+      // MANUS розрахунок на кількість
+      const manusDelta = itemPrice != null && itemBase != null ? parseFloat(((itemPrice - itemBase) * itemQty).toFixed(2)) : null;
+      const manusSaleTotal = itemPrice != null ? parseFloat((itemPrice * itemQty).toFixed(2)) : null;
+      const manusInputTotal = manusSaleTotal != null && manusDelta != null ? parseFloat((manusSaleTotal - manusDelta).toFixed(2)) : null;
+      return { ...item, delta, basePriceUah, manusDelta, manusSaleTotal, manusInputTotal };
     });
 
     res.json({
