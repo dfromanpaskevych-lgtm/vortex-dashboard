@@ -137,11 +137,4 @@
 - [x] Excel: Add same 3 MANUS columns to export
 - [x] REST API: Add manusDelta, manusSaleTotal, manusInputTotal fields to both /orders and /orders/:id
 - [x] Vitest: 4 new tests for MANUS formula correctness (60 total, all passing)
-- [x] Deploy after implementation — https://vortex-ai.manus.space
-- [x] DB migration: add balanceCurrencyBasePrice column to order_items
-- [x] Backfill: 7640/8595 items filled (88.9%) via UAH direct + fixedRate + currency_rates
-- [x] syncService: save balanceCurrencyBasePrice for new orders from Vortex API
-- [x] Fix MANUS formulas: MANUS Продажна=price×qty, MANUS Вхідна=balanceCurrencyBasePrice×qty, MANUS Дельта=Продажна-Вхідна
-- [x] Update UI, Excel export, REST API with corrected MANUS formulas (db.ts, Orders.tsx, exportExcel.ts, apiRoutes.ts)
-- [x] Vitest: 61 tests passing (updated MANUS tests with PAD10034AR real data)
-- [ ] Deploy fixed MANUS columns
+- [ ] Deploy after implementation

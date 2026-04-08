@@ -186,13 +186,22 @@ describe("sync router", () => {
 });
 
 describe("MANUS calculation columns", () => {
-  // New formula: MANUS Вхідна = balanceCurrencyBasePrice × qty
-  //              MANUS Продажна = price × qty
-  //              MANUS Дельта = MANUS Продажна - MANUS Вхідна
+  it("manusDelta = (price - basePrice) × qty", () => {
+    // Unit test for the MANUS delta formula (pure logic, no DB needed)
+    const cases = [
+      { price: 3500, basePrice: 2900, qty: 4, expected: 2400 },   // TRIANGLELEXUS
+      { price: 695,  basePrice: 691,  qty: 2, expected: 8 },       // S011756G
+      { price: 1500, basePrice: 968,  qty: 2, expected: 1064 },    // MN102439
+      { price: 100,  basePrice: 80,   qty: 1, expected: 20 },      // single unit
+    ];
+    for (const c of cases) {
+      const result = parseFloat(((c.price - c.basePrice) * c.qty).toFixed(2));
+      expect(result).toBe(c.expected);
+    }
+  });
 
   it("manusSaleTotal = price × qty", () => {
     const cases = [
-      { price: 4200, qty: 1, expected: 4200 },   // PAD10034AR
       { price: 3500, qty: 4, expected: 14000 },
       { price: 695,  qty: 2, expected: 1390 },
       { price: 1500, qty: 2, expected: 3000 },
@@ -203,48 +212,18 @@ describe("MANUS calculation columns", () => {
     }
   });
 
-  it("manusInputTotal = balanceCurrencyBasePrice × qty", () => {
+  it("manusInputTotal = manusSaleTotal - manusDelta", () => {
     const cases = [
-      { balanceCurrencyBasePrice: 1903.65, qty: 1, expected: 1903.65 },  // PAD10034AR (Vortex UAH)
-      { balanceCurrencyBasePrice: 2900,    qty: 4, expected: 11600 },
-      { balanceCurrencyBasePrice: 691,     qty: 2, expected: 1382 },
-      { balanceCurrencyBasePrice: 968,     qty: 2, expected: 1936 },
+      { price: 3500, basePrice: 2900, qty: 4, expectedInput: 11600 },  // 14000 - 2400
+      { price: 695,  basePrice: 691,  qty: 2, expectedInput: 1382 },   // 1390 - 8
+      { price: 1500, basePrice: 968,  qty: 2, expectedInput: 1936 },   // 3000 - 1064
     ];
     for (const c of cases) {
-      const result = parseFloat((c.balanceCurrencyBasePrice * c.qty).toFixed(2));
-      expect(result).toBe(c.expected);
-    }
-  });
-
-  it("manusDelta = manusSaleTotal - manusInputTotal", () => {
-    const cases = [
-      { price: 4200, balanceCurrencyBasePrice: 1903.65, qty: 1, expectedDelta: 2296.35 },  // PAD10034AR
-      { price: 3500, balanceCurrencyBasePrice: 2900,    qty: 4, expectedDelta: 2400 },
-      { price: 695,  balanceCurrencyBasePrice: 691,     qty: 2, expectedDelta: 8 },
-      { price: 1500, balanceCurrencyBasePrice: 968,     qty: 2, expectedDelta: 1064 },
-    ];
-    for (const c of cases) {
+      const manusDelta = parseFloat(((c.price - c.basePrice) * c.qty).toFixed(2));
       const manusSaleTotal = parseFloat((c.price * c.qty).toFixed(2));
-      const manusInputTotal = parseFloat((c.balanceCurrencyBasePrice * c.qty).toFixed(2));
-      const manusDelta = parseFloat((manusSaleTotal - manusInputTotal).toFixed(2));
-      expect(manusDelta).toBe(c.expectedDelta);
+      const manusInputTotal = parseFloat((manusSaleTotal - manusDelta).toFixed(2));
+      expect(manusInputTotal).toBe(c.expectedInput);
     }
-  });
-
-  it("manusDelta is null when balanceCurrencyBasePrice is null", () => {
-    // Items without balanceCurrencyBasePrice (old orders without backfill) should return null
-    const price = 4200;
-    const qty = 1;
-    const balanceCurrencyBasePrice = null;
-    const manusSaleTotal = parseFloat((price * qty).toFixed(2));
-    const manusInputTotal = balanceCurrencyBasePrice != null
-      ? parseFloat((Number(balanceCurrencyBasePrice) * qty).toFixed(2))
-      : null;
-    const manusDelta = manusSaleTotal != null && manusInputTotal != null
-      ? parseFloat((manusSaleTotal - manusInputTotal).toFixed(2))
-      : null;
-    expect(manusDelta).toBeNull();
-    expect(manusInputTotal).toBeNull();
   });
 
   it("MANUS columns present in orders.list rows", async () => {
