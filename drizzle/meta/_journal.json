@@ -64,6 +64,13 @@
       "when": 1775632695954,
       "tag": "0008_worthless_ben_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1775638414797,
+      "tag": "0009_last_silver_fox",
+      "breakpoints": true
     }
   ]
 }

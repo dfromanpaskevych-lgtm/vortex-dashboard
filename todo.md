@@ -147,3 +147,9 @@
 - [x] Update REST API with corrected formulas (both /orders and /orders/:id)
 - [x] Update tests with real verification data (orders 87676, 87323, 87586) — 61 tests passing
 - [ ] Deploy MANUS formula fix
+- [x] Chunked sync: split large periods into 7-day chunks, execute sequentially
+- [x] Sync logs: add dateFrom/dateTo columns, show date range in history UI
+- [x] Each chunk logged separately with its date range, status, start/end time
+- [x] Night auto-sync (00:00 Kyiv, 7 days) uses same chunked logic (syncOrdersChunked)
+- [x] 68 tests passing (7 new chunk split tests)
+- [ ] Deploy chunked sync

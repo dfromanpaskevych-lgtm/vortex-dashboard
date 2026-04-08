@@ -122,6 +122,8 @@ export const syncLogs = mysqlTable("sync_logs", {
   modifiedOrders: int("modifiedOrders").default(0),
   deletedOrders: int("deletedOrders").default(0),
   errorMessage: text("errorMessage"),
+  dateFrom: varchar("dateFrom", { length: 10 }),  // YYYY-MM-DD
+  dateTo: varchar("dateTo", { length: 10 }),      // YYYY-MM-DD
   startedAt: timestamp("startedAt").defaultNow().notNull(),
   completedAt: timestamp("completedAt"),
 });

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList, getLogisticsList } from "./db";
 import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./apiAuth";
 import { createWebhook, listWebhooks, updateWebhook, deleteWebhook, type WebhookEvent } from "./webhookService";
-import { syncOrders, getSyncStatus, startScheduledSync, getNextScheduledSyncTime, enrichBalances, getIsEnrichingBalances } from "./syncService";
+import { syncOrders, syncOrdersChunked, getSyncStatus, startScheduledSync, getNextScheduledSyncTime, enrichBalances, getIsEnrichingBalances } from "./syncService";
 
 // Auto-sync: daily at 00:00 Kyiv time, last 7 days
 startScheduledSync();
@@ -112,12 +112,21 @@ export const appRouter = router({
         const days = input?.days || 3;
         const dateFrom = input?.dateFrom;
         const dateTo = input?.dateTo;
-        // Fire and forget — runs day-by-day in background
-        syncOrders(days, dateFrom, dateTo, "manual");
+
+        // Calculate total days to decide chunking
+        let totalDays = days;
+        if (dateFrom && dateTo) {
+          totalDays = Math.ceil((dateTo - dateFrom) / (60 * 60 * 24));
+        }
+
+        // Use chunked sync for all requests — each chunk gets its own log entry
+        syncOrdersChunked(days, dateFrom, dateTo, "manual");
+
         const label = dateFrom && dateTo
           ? `${new Date(dateFrom * 1000).toLocaleDateString("uk-UA")} — ${new Date(dateTo * 1000).toLocaleDateString("uk-UA")}`
           : `останні ${days} дні`;
-        return { started: true, message: `Синхронізацію запущено: ${label}` };
+        const chunkCount = Math.ceil(totalDays / 7);
+        return { started: true, message: `Синхронізацію запущено: ${label} (${chunkCount} ${chunkCount === 1 ? "чанк" : "чанків"} по 7 днів)` };
       }),
 
     logs: publicProcedure.query(async () => {

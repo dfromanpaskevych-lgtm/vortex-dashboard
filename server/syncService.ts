@@ -411,20 +411,6 @@ export async function syncOrders(
     return { batchId, success: false, message: "Database not available" };
   }
 
-  // Create sync log entry
-  const startedAt = new Date();
-  await db.insert(syncLogs).values({
-    batchId,
-    status: "running",
-    syncType,
-    ordersProcessed: 0,
-    itemsProcessed: 0,
-    newOrders: 0,
-    modifiedOrders: 0,
-    deletedOrders: 0,
-    startedAt,
-  });
-
   try {
     let startDate: Date;
     let endDate: Date;
@@ -442,6 +428,25 @@ export async function syncOrders(
 
     startDate.setHours(0, 0, 0, 0);
     endDate.setHours(23, 59, 59, 999);
+
+    const dateFromStr = startDate.toISOString().slice(0, 10);
+    const dateToStr = endDate.toISOString().slice(0, 10);
+
+    // Create sync log entry with date range
+    const startedAt = new Date();
+    await db.insert(syncLogs).values({
+      batchId,
+      status: "running",
+      syncType,
+      ordersProcessed: 0,
+      itemsProcessed: 0,
+      newOrders: 0,
+      modifiedOrders: 0,
+      deletedOrders: 0,
+      dateFrom: dateFromStr,
+      dateTo: dateToStr,
+      startedAt,
+    });
 
     const rangeLabel = `${startDate.toISOString().slice(0, 10)} — ${endDate.toISOString().slice(0, 10)}`;
     console.log(`[Sync] Starting sync: ${rangeLabel}`);
@@ -761,7 +766,7 @@ export function startScheduledSync() {
       syncTimeout = null;
       console.log("[Sync] Auto daily sync triggered (00:00 Kyiv)");
       try {
-        await syncOrders(7, undefined, undefined, "auto"); // sync last 7 days
+        await syncOrdersChunked(7, undefined, undefined, "auto"); // sync last 7 days via chunks
       } catch (error) {
         console.error("[Sync] Auto sync error:", error);
       }
@@ -884,4 +889,107 @@ export async function resetStaleSyncLogs(): Promise<void> {
   if (affected > 0) {
     console.log(`[Startup] Reset ${affected} stale sync log(s) from 'running' to 'failed'`);
   }
+}
+
+const CHUNK_SIZE_DAYS = 7;
+
+/**
+ * Split a date range into 7-day chunks.
+ * Returns array of { from: Date, to: Date } pairs.
+ */
+function splitIntoChunks(startDate: Date, endDate: Date): Array<{ from: Date; to: Date }> {
+  const chunks: Array<{ from: Date; to: Date }> = [];
+  const current = new Date(startDate);
+
+  while (current <= endDate) {
+    const chunkEnd = new Date(current);
+    chunkEnd.setDate(chunkEnd.getDate() + CHUNK_SIZE_DAYS - 1);
+    // Don't go past endDate
+    const actualEnd = chunkEnd > endDate ? new Date(endDate) : chunkEnd;
+
+    chunks.push({
+      from: new Date(current),
+      to: new Date(actualEnd),
+    });
+
+    // Move to next chunk
+    current.setDate(current.getDate() + CHUNK_SIZE_DAYS);
+  }
+
+  return chunks;
+}
+
+/**
+ * Chunked sync: splits large periods into 7-day chunks and executes them sequentially.
+ * Each chunk creates its own sync_log entry with dateFrom/dateTo.
+ * Used for both manual sync and nightly auto-sync.
+ */
+export async function syncOrdersChunked(
+  days = 3,
+  dateFrom?: number,
+  dateTo?: number,
+  syncType: "manual" | "auto" = "manual"
+): Promise<{ success: boolean; message: string; chunks: number; results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> }> {
+  // Calculate full date range
+  let startDate: Date;
+  let endDate: Date;
+
+  if (dateFrom && dateTo) {
+    startDate = new Date(dateFrom * 1000);
+    endDate = new Date(dateTo * 1000);
+  } else {
+    endDate = new Date();
+    startDate = new Date();
+    startDate.setDate(startDate.getDate() - (days - 1));
+  }
+
+  startDate.setHours(0, 0, 0, 0);
+  endDate.setHours(23, 59, 59, 999);
+
+  // Split into 7-day chunks
+  const chunks = splitIntoChunks(startDate, endDate);
+  const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+  console.log(`[ChunkedSync] Period: ${startDate.toISOString().slice(0, 10)} — ${endDate.toISOString().slice(0, 10)} (${totalDays} days, ${chunks.length} chunks)`);
+
+  const results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> = [];
+
+  // Execute chunks sequentially
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const chunkFromTs = Math.floor(chunk.from.getTime() / 1000);
+    const chunkToTs = Math.floor(chunk.to.getTime() / 1000);
+    const chunkLabel = `${chunk.from.toISOString().slice(0, 10)} — ${chunk.to.toISOString().slice(0, 10)}`;
+
+    console.log(`[ChunkedSync] Starting chunk ${i + 1}/${chunks.length}: ${chunkLabel}`);
+
+    const result = await syncOrders(0, chunkFromTs, chunkToTs, syncType);
+
+    results.push({
+      batchId: result.batchId,
+      success: result.success,
+      dateFrom: chunk.from.toISOString().slice(0, 10),
+      dateTo: chunk.to.toISOString().slice(0, 10),
+    });
+
+    console.log(`[ChunkedSync] Chunk ${i + 1}/${chunks.length} ${result.success ? "completed" : "failed"}: ${result.message}`);
+
+    // Small pause between chunks to avoid overloading
+    if (i < chunks.length - 1) {
+      console.log(`[ChunkedSync] Pausing 3s before next chunk...`);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+
+  const successCount = results.filter(r => r.success).length;
+  const failCount = results.filter(r => !r.success).length;
+  const msg = `Chunked sync completed: ${successCount}/${chunks.length} chunks successful${failCount > 0 ? `, ${failCount} failed` : ""}`;
+  console.log(`[ChunkedSync] ${msg}`);
+
+  return {
+    success: failCount === 0,
+    message: msg,
+    chunks: chunks.length,
+    results,
+  };
 }

@@ -344,6 +344,7 @@ export default function Sync() {
             <TableHeader>
               <TableRow className="bg-muted/50">
                 <TableHead className="whitespace-nowrap">Тип</TableHead>
+                <TableHead className="whitespace-nowrap">Діапазон дат</TableHead>
                 <TableHead className="whitespace-nowrap">Початок</TableHead>
                 <TableHead className="whitespace-nowrap">Завершення</TableHead>
                 <TableHead className="whitespace-nowrap">Тривалість</TableHead>
@@ -359,7 +360,7 @@ export default function Sync() {
               {logsLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 10 }).map((_, j) => (
+                    {Array.from({ length: 11 }).map((_, j) => (
                       <TableCell key={j}>
                         <div className="h-4 bg-muted animate-pulse rounded" />
                       </TableCell>
@@ -368,7 +369,7 @@ export default function Sync() {
                 ))
               ) : !syncLogs || syncLogs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                     Синхронізацій ще не було
                   </TableCell>
                 </TableRow>
@@ -392,6 +393,15 @@ export default function Sync() {
                             <><User className="h-3 w-3" /> Ручна</>
                           )}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs whitespace-nowrap font-medium">
+                        {log.dateFrom && log.dateTo ? (
+                          <span className="text-primary">
+                            {log.dateFrom as string} — {log.dateTo as string}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs whitespace-nowrap">
                         {startedAt ? startedAt.toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
