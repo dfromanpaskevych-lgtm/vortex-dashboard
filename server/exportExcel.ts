@@ -106,6 +106,7 @@ export async function handleExcelExport(req: Request, res: Response) {
         rgTimestamp: orderItems.rgTimestamp,
         fixedRate: orderItems.fixedRate,
         fixedRateDate: orderItems.fixedRateDate,
+        balanceCurrencyBasePrice: orderItems.balanceCurrencyBasePrice,
         balanceCurrencyTotal: orders.balanceCurrencyTotal,
         balanceCurrency: orders.balanceCurrency,
       })
@@ -223,10 +224,15 @@ export async function handleExcelExport(req: Request, res: Response) {
         row.supplierTotal ? Number(row.supplierTotal) : "—",
         row.supplierCurrency ? row.supplierCurrency.toUpperCase() : "—",
         formatDate(row.rgTimestamp),
-        // MANUS columns
-        bp != null && sp != null ? Math.round((sp - bp) * qty * 100) / 100 : "—",
+        // MANUS columns (balanceCurrencyBasePrice = вхідна ціна в UAH від Vortex)
+        (() => {
+          const manusSale = sp != null ? Math.round(sp * qty * 100) / 100 : null;
+          const manusInput = row.balanceCurrencyBasePrice != null ? Math.round(Number(row.balanceCurrencyBasePrice) * qty * 100) / 100 : null;
+          const manusDelta = manusSale != null && manusInput != null ? Math.round((manusSale - manusInput) * 100) / 100 : null;
+          return manusDelta != null ? manusDelta : "—";
+        })(),
         sp != null ? Math.round(sp * qty * 100) / 100 : "—",
-        sp != null && bp != null ? Math.round((sp * qty - (sp - bp) * qty) * 100) / 100 : "—",
+        row.balanceCurrencyBasePrice != null ? Math.round(Number(row.balanceCurrencyBasePrice) * qty * 100) / 100 : "—",
       ]);
     }
 

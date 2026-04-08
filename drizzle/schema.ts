@@ -78,6 +78,8 @@ export const orderItems = mysqlTable("order_items", {
   supplierCurrency: varchar("supplierCurrency", { length: 10 }),
   rgId: varchar("rgId", { length: 32 }),
   rgTimestamp: bigint("rgTimestamp", { mode: "number" }),
+  // Vortex-converted base price in UAH (balance_currency_base_price from API)
+  balanceCurrencyBasePrice: decimal("balanceCurrencyBasePrice", { precision: 12, scale: 2 }),
   // Currency exchange rate fixed at order creation date
   fixedRate: decimal("fixedRate", { precision: 10, scale: 4 }),
   fixedRateDate: varchar("fixedRateDate", { length: 10 }), // YYYY-MM-DD

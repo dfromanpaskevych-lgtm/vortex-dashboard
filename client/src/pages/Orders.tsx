@@ -157,13 +157,13 @@ export default function Orders() {
       const basePriceUah = row.basePrice
         ? (fixedRate && fixedRate > 0 ? (Number(row.basePrice) * fixedRate).toFixed(2) : null)
         : null;
-      // MANUS розрахунок на кількість
-      const manusDelta = row.basePrice && salePrice
-        ? ((Number(salePrice) - Number(row.basePrice)) * qty)
-        : null;
+      // MANUS розрахунок на кількість (використовує balanceCurrencyBasePrice — вхідна ціна в UAH від Vortex)
       const manusSaleTotal = salePrice ? (Number(salePrice) * qty) : null;
-      const manusInputTotal = manusSaleTotal != null && manusDelta != null
-        ? (manusSaleTotal - manusDelta)
+      const manusInputTotal = row.balanceCurrencyBasePrice != null
+        ? (Number(row.balanceCurrencyBasePrice) * qty)
+        : null;
+      const manusDelta = manusSaleTotal != null && manusInputTotal != null
+        ? (manusSaleTotal - manusInputTotal)
         : null;
       return {
         num: row.vortexOrderId,

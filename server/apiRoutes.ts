@@ -153,6 +153,7 @@ apiRouter.get("/orders", async (req: Request, res: Response) => {
         rgTimestamp: orderItems.rgTimestamp,
         fixedRate: orderItems.fixedRate,
         fixedRateDate: orderItems.fixedRateDate,
+        balanceCurrencyBasePrice: orderItems.balanceCurrencyBasePrice,
       })
       .from(orders)
       .leftJoin(orderItems, eq(orders.vortexOrderId, orderItems.vortexOrderId))
@@ -206,10 +207,10 @@ apiRouter.get("/orders", async (req: Request, res: Response) => {
         const itemBase = row.basePrice ? Number(row.basePrice) : null;
         // Vortex delta = (price_per_unit - base_price_per_unit) × qty
         const itemDelta = itemPrice != null && itemBase != null ? ((itemPrice - itemBase) * itemQty).toFixed(2) : null;
-        // MANUS розрахунок на кількість
-        const manusDelta = itemPrice != null && itemBase != null ? parseFloat(((itemPrice - itemBase) * itemQty).toFixed(2)) : null;
+        // MANUS розрахунок на кількість (balanceCurrencyBasePrice = вхідна ціна в UAH від Vortex)
         const manusSaleTotal = itemPrice != null ? parseFloat((itemPrice * itemQty).toFixed(2)) : null;
-        const manusInputTotal = manusSaleTotal != null && manusDelta != null ? parseFloat((manusSaleTotal - manusDelta).toFixed(2)) : null;
+        const manusInputTotal = row.balanceCurrencyBasePrice != null ? parseFloat((Number(row.balanceCurrencyBasePrice) * itemQty).toFixed(2)) : null;
+        const manusDelta = manusSaleTotal != null && manusInputTotal != null ? parseFloat((manusSaleTotal - manusInputTotal).toFixed(2)) : null;
         ordersMap.get(key)!.items.push({
           orderItemId: row.orderItemId,
           code: row.code,
@@ -307,10 +308,10 @@ apiRouter.get("/orders/:id", async (req: Request, res: Response) => {
       const delta = itemPrice != null && itemBase != null ? ((itemPrice - itemBase) * itemQty).toFixed(2) : null;
       const fRate = item.fixedRate ? Number(item.fixedRate) : null;
       const basePriceUah = itemBase != null && fRate && fRate > 0 ? (itemBase * fRate).toFixed(2) : null;
-      // MANUS розрахунок на кількість
-      const manusDelta = itemPrice != null && itemBase != null ? parseFloat(((itemPrice - itemBase) * itemQty).toFixed(2)) : null;
+      // MANUS розрахунок на кількість (balanceCurrencyBasePrice = вхідна ціна в UAH від Vortex)
       const manusSaleTotal = itemPrice != null ? parseFloat((itemPrice * itemQty).toFixed(2)) : null;
-      const manusInputTotal = manusSaleTotal != null && manusDelta != null ? parseFloat((manusSaleTotal - manusDelta).toFixed(2)) : null;
+      const manusInputTotal = item.balanceCurrencyBasePrice != null ? parseFloat((Number(item.balanceCurrencyBasePrice) * itemQty).toFixed(2)) : null;
+      const manusDelta = manusSaleTotal != null && manusInputTotal != null ? parseFloat((manusSaleTotal - manusInputTotal).toFixed(2)) : null;
       return { ...item, delta, basePriceUah, manusDelta, manusSaleTotal, manusInputTotal };
     });
 

@@ -82,11 +82,14 @@ function mapItemToDb(item: Record<string, unknown>, orderId: number, vortexOrder
     clientNote: String(item.client_note || ""),
     managerNote: String(item.manager_note || ""),
     returnPeriod: String(item.return_period || "0"),
+    // Vortex-provided base price already converted to UAH (from get_order_by_id)
+    balanceCurrencyBasePrice: item.balance_currency_base_price != null
+      ? String(item.balance_currency_base_price)
+      : null,
   };
 }
-
 /**
- * Get fixedRate for an item based on its currency and order creation date.
+ * Get fixedRate for an item based on its currency and order creation date..
  * For UAH items, rate = 1. For EUR/USD, fetch from Monobank/NBU.
  * If item already has a fixedRate in DB, preserve it (immutable).
  */
