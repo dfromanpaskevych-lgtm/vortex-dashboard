@@ -141,3 +141,9 @@
 - [x] Filter: add qty filter (min/max quantity) in db.ts, tRPC router, UI
 - [x] Filter: add basePriceCurrency filter (UAH/EUR/USD) in db.ts, tRPC router, UI
 - [ ] Deploy new filters
+- [x] Fix MANUS Дельта = (price-basePrice) × qty [дельта за 1 шт = price-basePrice]
+- [x] Fix MANUS Вхідна = MANUS Продажна - MANUS Дельта
+- [x] Update Excel export with corrected formulas
+- [x] Update REST API with corrected formulas (both /orders and /orders/:id)
+- [x] Update tests with real verification data (orders 87676, 87323, 87586) — 61 tests passing
+- [ ] Deploy MANUS formula fix

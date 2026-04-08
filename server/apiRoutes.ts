@@ -204,10 +204,11 @@ apiRouter.get("/orders", async (req: Request, res: Response) => {
         const itemQty = Number(row.qty) || 1;
         const itemPrice = row.price ? Number(row.price) : null;
         const itemBase = row.basePrice ? Number(row.basePrice) : null;
-        // Vortex delta = (price_per_unit - base_price_per_unit) × qty
-        const itemDelta = itemPrice != null && itemBase != null ? ((itemPrice - itemBase) * itemQty).toFixed(2) : null;
+        // Дельта за 1 шт = price - basePrice
+        const deltaPerUnit = itemPrice != null && itemBase != null ? (itemPrice - itemBase) : null;
+        const itemDelta = deltaPerUnit != null ? deltaPerUnit.toFixed(2) : null;
         // MANUS розрахунок на кількість
-        const manusDelta = itemPrice != null && itemBase != null ? parseFloat(((itemPrice - itemBase) * itemQty).toFixed(2)) : null;
+        const manusDelta = deltaPerUnit != null ? parseFloat((deltaPerUnit * itemQty).toFixed(2)) : null;
         const manusSaleTotal = itemPrice != null ? parseFloat((itemPrice * itemQty).toFixed(2)) : null;
         const manusInputTotal = manusSaleTotal != null && manusDelta != null ? parseFloat((manusSaleTotal - manusDelta).toFixed(2)) : null;
         ordersMap.get(key)!.items.push({
@@ -304,11 +305,13 @@ apiRouter.get("/orders/:id", async (req: Request, res: Response) => {
       const itemQty = Number(item.qty) || 1;
       const itemPrice = item.price ? Number(item.price) : null;
       const itemBase = item.basePrice ? Number(item.basePrice) : null;
-      const delta = itemPrice != null && itemBase != null ? ((itemPrice - itemBase) * itemQty).toFixed(2) : null;
+      // Дельта за 1 шт = price - basePrice
+      const deltaPerUnit = itemPrice != null && itemBase != null ? (itemPrice - itemBase) : null;
+      const delta = deltaPerUnit != null ? deltaPerUnit.toFixed(2) : null;
       const fRate = item.fixedRate ? Number(item.fixedRate) : null;
       const basePriceUah = itemBase != null && fRate && fRate > 0 ? (itemBase * fRate).toFixed(2) : null;
       // MANUS розрахунок на кількість
-      const manusDelta = itemPrice != null && itemBase != null ? parseFloat(((itemPrice - itemBase) * itemQty).toFixed(2)) : null;
+      const manusDelta = deltaPerUnit != null ? parseFloat((deltaPerUnit * itemQty).toFixed(2)) : null;
       const manusSaleTotal = itemPrice != null ? parseFloat((itemPrice * itemQty).toFixed(2)) : null;
       const manusInputTotal = manusSaleTotal != null && manusDelta != null ? parseFloat((manusSaleTotal - manusDelta).toFixed(2)) : null;
       return { ...item, delta, basePriceUah, manusDelta, manusSaleTotal, manusInputTotal };

@@ -156,21 +156,23 @@ export default function Orders() {
     return rows.map((row: any) => {
       const salePrice = row.price || row.retailPrice;
       const qty = Number(row.qty) || 1;
-      // Vortex delta = (price_per_unit - base_price_per_unit) × qty
-      // price and base_price are both per-unit; delta is for the TOTAL quantity
-      const delta = row.basePrice && salePrice
-        ? ((Number(salePrice) - Number(row.basePrice)) * qty).toFixed(2)
+      // Дельта за 1 шт = price - basePrice (обидва в UAH)
+      const deltaPerUnit = row.basePrice != null && salePrice != null
+        ? (Number(salePrice) - Number(row.basePrice))
         : null;
+      // Дельта в колонці = дельта за 1 шт (читається як маржа за 1 одиницю)
+      const delta = deltaPerUnit != null ? deltaPerUnit.toFixed(2) : null;
       // Base price in UAH: if fixedRate exists, basePrice × fixedRate; otherwise basePrice (assumed UAH)
       const fixedRate = row.fixedRate ? Number(row.fixedRate) : null;
       const basePriceUah = row.basePrice
         ? (fixedRate && fixedRate > 0 ? (Number(row.basePrice) * fixedRate).toFixed(2) : null)
         : null;
       // MANUS розрахунок на кількість
-      const manusDelta = row.basePrice && salePrice
-        ? ((Number(salePrice) - Number(row.basePrice)) * qty)
-        : null;
+      // MANUS Продажна = price × qty
+      // MANUS Дельта = (price - basePrice) × qty
+      // MANUS Вхідна = MANUS Продажна − MANUS Дельта
       const manusSaleTotal = salePrice ? (Number(salePrice) * qty) : null;
+      const manusDelta = deltaPerUnit != null ? (deltaPerUnit * qty) : null;
       const manusInputTotal = manusSaleTotal != null && manusDelta != null
         ? (manusSaleTotal - manusDelta)
         : null;

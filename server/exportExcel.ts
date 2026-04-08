@@ -183,9 +183,10 @@ export async function handleExcelExport(req: Request, res: Response) {
       const bp = row.basePrice ? Number(row.basePrice) : null;
       const sp = row.price ? Number(row.price) : (row.retailPrice ? Number(row.retailPrice) : null);
       const qty = Number(row.qty) || 1;
-      // Vortex delta = (price_per_unit - base_price_per_unit) × qty
-      // Both price and base_price are per-unit; delta is for the TOTAL quantity
-      const delta = bp != null && sp != null ? (sp - bp) * qty : null;
+      // Дельта за 1 шт = price - basePrice
+      const deltaPerUnit = bp != null && sp != null ? (sp - bp) : null;
+      // Дельта в колонці = маржа за 1 одиницю
+      const delta = deltaPerUnit;
       const phone = row.customerPhone && row.customerPhone.trim() !== "" ? row.customerPhone.trim() : "немає номеру";
 
       // Calculate base price in UAH using fixedRate
@@ -223,10 +224,10 @@ export async function handleExcelExport(req: Request, res: Response) {
         row.supplierTotal ? Number(row.supplierTotal) : "—",
         row.supplierCurrency ? row.supplierCurrency.toUpperCase() : "—",
         formatDate(row.rgTimestamp),
-        // MANUS columns
-        bp != null && sp != null ? Math.round((sp - bp) * qty * 100) / 100 : "—",
+        // MANUS columns: Дельта=deltaPerUnit×qty, Продажна=price×qty, Вхідна=Продажна-Дельта
+        deltaPerUnit != null ? Math.round(deltaPerUnit * qty * 100) / 100 : "—",
         sp != null ? Math.round(sp * qty * 100) / 100 : "—",
-        sp != null && bp != null ? Math.round((sp * qty - (sp - bp) * qty) * 100) / 100 : "—",
+        sp != null && deltaPerUnit != null ? Math.round((sp * qty - deltaPerUnit * qty) * 100) / 100 : "—",
       ]);
     }
 

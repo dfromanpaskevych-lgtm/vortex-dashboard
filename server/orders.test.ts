@@ -186,25 +186,44 @@ describe("sync router", () => {
 });
 
 describe("MANUS calculation columns", () => {
-  it("manusDelta = (price - basePrice) × qty", () => {
-    // Unit test for the MANUS delta formula (pure logic, no DB needed)
+  // Формули (згідно ТЗ 08.04.2026):
+  // MANUS Продажна = price × qty
+  // MANUS Дельта = (price - basePrice) × qty  [дельта за 1 шт = price - basePrice]
+  // MANUS Вхідна = MANUS Продажна − MANUS Дельта
+
+  it("Дельта за 1 шт = price - basePrice", () => {
+    // Дельта в колонці = маржа за 1 одиницю
     const cases = [
-      { price: 3500, basePrice: 2900, qty: 4, expected: 2400 },   // TRIANGLELEXUS
-      { price: 695,  basePrice: 691,  qty: 2, expected: 8 },       // S011756G
-      { price: 1500, basePrice: 968,  qty: 2, expected: 1064 },    // MN102439
-      { price: 100,  basePrice: 80,   qty: 1, expected: 20 },      // single unit
+      { price: 1650, basePrice: 1100, expected: 550 },  // order 87676
+      { price: 3500, basePrice: 2900, expected: 600 },  // order 87323
+      { price: 33,   basePrice: 32.78, expected: 0.22 }, // order 87586
     ];
     for (const c of cases) {
-      const result = parseFloat(((c.price - c.basePrice) * c.qty).toFixed(2));
+      const result = parseFloat((c.price - c.basePrice).toFixed(2));
+      expect(result).toBe(c.expected);
+    }
+  });
+
+  it("manusDelta = (price - basePrice) × qty — реальні замовлення", () => {
+    const cases = [
+      { price: 1650, basePrice: 1100, qty: 4, expected: 2200 },   // order 87676: 550×4
+      { price: 3500, basePrice: 2900, qty: 4, expected: 2400 },   // order 87323: 600×4
+      { price: 33,   basePrice: 32.78, qty: 2, expected: 0.44 },  // order 87586: 0.22×2
+      { price: 100,  basePrice: 80,   qty: 1, expected: 20 },     // single unit
+      { price: 100,  basePrice: 100,  qty: 5, expected: 0 },      // zero delta
+    ];
+    for (const c of cases) {
+      const deltaPerUnit = c.price - c.basePrice;
+      const result = parseFloat((deltaPerUnit * c.qty).toFixed(2));
       expect(result).toBe(c.expected);
     }
   });
 
   it("manusSaleTotal = price × qty", () => {
     const cases = [
-      { price: 3500, qty: 4, expected: 14000 },
-      { price: 695,  qty: 2, expected: 1390 },
-      { price: 1500, qty: 2, expected: 3000 },
+      { price: 1650, qty: 4, expected: 6600 },   // order 87676
+      { price: 3500, qty: 4, expected: 14000 },  // order 87323
+      { price: 33,   qty: 2, expected: 66 },     // order 87586
     ];
     for (const c of cases) {
       const result = parseFloat((c.price * c.qty).toFixed(2));
@@ -212,14 +231,15 @@ describe("MANUS calculation columns", () => {
     }
   });
 
-  it("manusInputTotal = manusSaleTotal - manusDelta", () => {
+  it("manusInputTotal = manusSaleTotal - manusDelta — реальні замовлення", () => {
     const cases = [
-      { price: 3500, basePrice: 2900, qty: 4, expectedInput: 11600 },  // 14000 - 2400
-      { price: 695,  basePrice: 691,  qty: 2, expectedInput: 1382 },   // 1390 - 8
-      { price: 1500, basePrice: 968,  qty: 2, expectedInput: 1936 },   // 3000 - 1064
+      { price: 1650, basePrice: 1100, qty: 4, expectedInput: 4400 },   // order 87676: 6600-2200
+      { price: 3500, basePrice: 2900, qty: 4, expectedInput: 11600 },  // order 87323: 14000-2400
+      { price: 33,   basePrice: 32.78, qty: 2, expectedInput: 65.56 }, // order 87586: 66-0.44
     ];
     for (const c of cases) {
-      const manusDelta = parseFloat(((c.price - c.basePrice) * c.qty).toFixed(2));
+      const deltaPerUnit = c.price - c.basePrice;
+      const manusDelta = parseFloat((deltaPerUnit * c.qty).toFixed(2));
       const manusSaleTotal = parseFloat((c.price * c.qty).toFixed(2));
       const manusInputTotal = parseFloat((manusSaleTotal - manusDelta).toFixed(2));
       expect(manusInputTotal).toBe(c.expectedInput);
