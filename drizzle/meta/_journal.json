@@ -71,6 +71,13 @@
       "when": 1775638414797,
       "tag": "0009_last_silver_fox",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1775655852108,
+      "tag": "0010_brown_rocket_racer",
+      "breakpoints": true
     }
   ]
 }

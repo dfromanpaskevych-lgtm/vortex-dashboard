@@ -114,7 +114,7 @@ export type ChangeLog = typeof changeLogs.$inferSelect;
 export const syncLogs = mysqlTable("sync_logs", {
   id: int("id").autoincrement().primaryKey(),
   batchId: varchar("batchId", { length: 64 }).notNull().unique(),
-  status: mysqlEnum("status", ["running", "completed", "failed"]).notNull(),
+  status: mysqlEnum("status", ["running", "completed", "failed", "cancelled"]).notNull(),
   syncType: mysqlEnum("syncType", ["manual", "auto"]).default("manual").notNull(),
   ordersProcessed: int("ordersProcessed").default(0),
   itemsProcessed: int("itemsProcessed").default(0),

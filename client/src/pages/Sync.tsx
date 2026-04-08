@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import {
   RefreshCw, CheckCircle2, XCircle, Loader2, Clock, Database,
-  CalendarDays, ChevronDown, Coins, Bot, User
+  CalendarDays, ChevronDown, Coins, Bot, User, StopCircle
 } from "lucide-react";
 import { toast } from "sonner";
 import type { DateRange } from "react-day-picker";
@@ -69,6 +69,26 @@ export default function Sync() {
       toast.error("Помилка: " + err.message);
     },
   });
+
+  const cancelSync = trpc.sync.cancel.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.info("Зупинка запрошена. Поточний чанк завершиться, наступні не запустяться.");
+      } else {
+        toast.warning(data.message || "Синхронізація не запущена");
+      }
+      utils.sync.status.invalidate();
+      utils.sync.logs.invalidate();
+    },
+    onError: (err: { message: string }) => {
+      toast.error("Помилка зупинки: " + err.message);
+    },
+  });
+
+  const { data: cancelPendingData } = trpc.sync.cancelPending.useQuery(undefined, {
+    refetchInterval: 2000,
+  });
+  const isCancelPending = cancelPendingData?.isCancelPending ?? false;
 
   const triggerEnrichBalances = trpc.sync.enrichBalances.useMutation({
     onSuccess: (data) => {
@@ -290,6 +310,22 @@ export default function Sync() {
                 ? "Синхронізація в процесі..."
                 : `Синхронізувати: ${getSyncLabel()}`}
             </Button>
+
+            {/* Stop button — visible only when sync is running */}
+            {isSyncing && (
+              <Button
+                className="w-full"
+                variant="destructive"
+                onClick={() => cancelSync.mutate()}
+                disabled={isCancelPending || cancelSync.isPending}
+              >
+                {isCancelPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Зупинка після поточного чанку...</>
+                ) : (
+                  <><StopCircle className="h-4 w-4 mr-2" /> Зупинити синхронізацію</>
+                )}
+              </Button>
+            )}
           </CardContent>
         </Card>
 
@@ -414,14 +450,19 @@ export default function Sync() {
                         <Badge
                           variant={
                             log.status === "completed" ? "default" :
-                            log.status === "failed" ? "destructive" : "secondary"
+                            log.status === "failed" ? "destructive" :
+                            log.status === "cancelled" ? "outline" : "secondary"
                           }
-                          className="text-[10px]"
+                          className={`text-[10px] ${
+                            log.status === "cancelled" ? "border-orange-500 text-orange-500" : ""
+                          }`}
                         >
                           {log.status === "completed" ? (
                             <><CheckCircle2 className="h-3 w-3 mr-1" /> Успішно</>
                           ) : log.status === "failed" ? (
                             <><XCircle className="h-3 w-3 mr-1" /> Помилка</>
+                          ) : log.status === "cancelled" ? (
+                            <><StopCircle className="h-3 w-3 mr-1" /> Скасовано</>
                           ) : (
                             <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> В процесі</>
                           )}

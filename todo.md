@@ -156,4 +156,11 @@
 - [x] Fix auto-sync: sync current month (1st to today) instead of last 7 days
 - [x] Ensure chunk errors don't stop other chunks (try/catch per chunk, continue on error)
 - [x] Update scheduledSync tests for new month-based logic (69 tests passing)
-- [ ] Deploy auto-sync fix
+- [x] Deploy auto-sync fix — https://vortex-ai.manus.space
+- [x] Cancel sync: add cancelFlag in syncService, stop before next chunk
+- [x] Cancel sync: mark pending chunks as "cancelled" in sync_logs with "Cancelled by user"
+- [x] Cancel sync: add tRPC sync.cancel + sync.cancelPending mutations
+- [x] Cancel sync: add "Зупинити" button in Sync.tsx (visible only when sync is running, orange badge in history)
+- [x] DB migration: add 'cancelled' to sync_logs status enum
+- [x] 69 tests passing
+- [ ] Deploy cancel sync feature

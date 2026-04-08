@@ -7,6 +7,24 @@ import { fireSyncWebhooks } from "./webhookService";
 import { getExchangeRate, timestampToDateStr } from "./currencyService";
 
 let isSyncing = false;
+let cancelRequested = false;
+
+/**
+ * Request cancellation of the current chunked sync.
+ * The running chunk completes, then no further chunks are started.
+ */
+export function cancelSync(): { success: boolean; message: string } {
+  if (!isSyncing) {
+    return { success: false, message: "No sync is currently running" };
+  }
+  cancelRequested = true;
+  console.log("[Sync] Cancellation requested — will stop after current chunk");
+  return { success: true, message: "Cancellation requested. Current chunk will finish, then sync will stop." };
+}
+
+export function isCancelPending(): boolean {
+  return cancelRequested;
+}
 
 export async function getSyncStatus() {
   const db = await getDb();
@@ -960,8 +978,46 @@ export async function syncOrdersChunked(
 
   const results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> = [];
 
+  // Reset cancel flag at start of new chunked run
+  cancelRequested = false;
+
   // Execute chunks sequentially
   for (let i = 0; i < chunks.length; i++) {
+    // Check cancellation BEFORE starting next chunk
+    if (cancelRequested) {
+      console.log(`[ChunkedSync] Cancellation detected before chunk ${i + 1}/${chunks.length} — stopping.`);
+      // Log remaining chunks as cancelled in DB
+      const db = await getDb();
+      if (db) {
+        for (let j = i; j < chunks.length; j++) {
+          const cancelBatchId = nanoid();
+          const cancelChunk = chunks[j];
+          await db.insert(syncLogs).values({
+            batchId: cancelBatchId,
+            status: "cancelled",
+            syncType,
+            ordersProcessed: 0,
+            itemsProcessed: 0,
+            newOrders: 0,
+            modifiedOrders: 0,
+            deletedOrders: 0,
+            dateFrom: cancelChunk.from.toISOString().slice(0, 10),
+            dateTo: cancelChunk.to.toISOString().slice(0, 10),
+            startedAt: new Date(),
+            completedAt: new Date(),
+            errorMessage: "Cancelled by user",
+          });
+          results.push({
+            batchId: cancelBatchId,
+            success: false,
+            dateFrom: cancelChunk.from.toISOString().slice(0, 10),
+            dateTo: cancelChunk.to.toISOString().slice(0, 10),
+          });
+        }
+      }
+      break;
+    }
+
     const chunk = chunks[i];
     const chunkFromTs = Math.floor(chunk.from.getTime() / 1000);
     const chunkToTs = Math.floor(chunk.to.getTime() / 1000);
@@ -992,7 +1048,7 @@ export async function syncOrdersChunked(
     results.push(chunkResult);
 
     // Small pause between chunks to avoid overloading
-    if (i < chunks.length - 1) {
+    if (i < chunks.length - 1 && !cancelRequested) {
       console.log(`[ChunkedSync] Pausing 3s before next chunk...`);
       await new Promise(r => setTimeout(r, 3000));
     }

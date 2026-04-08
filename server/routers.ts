@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList, getLogisticsList } from "./db";
 import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./apiAuth";
 import { createWebhook, listWebhooks, updateWebhook, deleteWebhook, type WebhookEvent } from "./webhookService";
-import { syncOrders, syncOrdersChunked, getSyncStatus, startScheduledSync, getNextScheduledSyncTime, enrichBalances, getIsEnrichingBalances } from "./syncService";
+import { syncOrders, syncOrdersChunked, getSyncStatus, startScheduledSync, getNextScheduledSyncTime, enrichBalances, getIsEnrichingBalances, cancelSync, isCancelPending } from "./syncService";
 
 // Auto-sync: daily at 00:00 Kyiv time, last 7 days
 startScheduledSync();
@@ -144,6 +144,14 @@ export const appRouter = router({
 
     balanceStatus: publicProcedure.query(() => {
       return { isEnriching: getIsEnrichingBalances() };
+    }),
+
+    cancel: publicProcedure.mutation(() => {
+      return cancelSync();
+    }),
+
+    cancelPending: publicProcedure.query(() => {
+      return { isCancelPending: isCancelPending() };
     }),
   }),
 
