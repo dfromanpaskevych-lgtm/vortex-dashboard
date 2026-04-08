@@ -944,6 +944,65 @@ function splitIntoChunks(startDate: Date, endDate: Date): Array<{ from: Date; to
 }
 
 /**
+ * Recursively sync a date range, splitting into halves on failure.
+ * Minimum granularity: 1 day. Each attempt creates its own sync_log entry.
+ * Returns array of results (may be multiple sub-chunks if splitting occurred).
+ */
+async function syncChunkWithRetry(
+  from: Date,
+  to: Date,
+  syncType: "manual" | "auto",
+  depth = 0
+): Promise<Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }>> {
+  const fromTs = Math.floor(from.getTime() / 1000);
+  const toTs = Math.floor(to.getTime() / 1000);
+  const fromStr = from.toISOString().slice(0, 10);
+  const toStr = to.toISOString().slice(0, 10);
+  const totalDays = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const indent = "  ".repeat(depth);
+
+  console.log(`${indent}[ChunkRetry] Trying ${fromStr} — ${toStr} (${totalDays} days, depth=${depth})`);
+
+  let result: { batchId: string; success: boolean; message: string };
+  try {
+    result = await syncOrders(0, fromTs, toTs, syncType);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    result = { batchId: `err-${nanoid(6)}`, success: false, message: errMsg };
+  }
+
+  if (result.success) {
+    console.log(`${indent}[ChunkRetry] ✅ Success: ${fromStr} — ${toStr}`);
+    return [{ batchId: result.batchId, success: true, dateFrom: fromStr, dateTo: toStr }];
+  }
+
+  // Failed — can we split further?
+  if (totalDays <= 1) {
+    // Minimum granularity reached — mark as failed
+    console.error(`${indent}[ChunkRetry] ❌ Failed at 1-day granularity: ${fromStr}`);
+    return [{ batchId: result.batchId, success: false, dateFrom: fromStr, dateTo: toStr }];
+  }
+
+  // Split into two halves
+  const midDays = Math.floor(totalDays / 2);
+  const mid = new Date(from);
+  mid.setDate(mid.getDate() + midDays - 1);
+  mid.setHours(23, 59, 59, 999);
+  const midNext = new Date(mid);
+  midNext.setDate(midNext.getDate() + 1);
+  midNext.setHours(0, 0, 0, 0);
+
+  console.log(`${indent}[ChunkRetry] Splitting ${fromStr}—${toStr} into [${fromStr}—${mid.toISOString().slice(0,10)}] + [${midNext.toISOString().slice(0,10)}—${toStr}]`);
+
+  const leftResults = await syncChunkWithRetry(from, mid, syncType, depth + 1);
+  // Small pause between sub-chunks
+  await new Promise(r => setTimeout(r, 2000));
+  const rightResults = await syncChunkWithRetry(midNext, to, syncType, depth + 1);
+
+  return [...leftResults, ...rightResults];
+}
+
+/**
  * Chunked sync: splits large periods into 7-day chunks and executes them sequentially.
  * Each chunk creates its own sync_log entry with dateFrom/dateTo.
  * Used for both manual sync and nightly auto-sync.
@@ -1019,33 +1078,12 @@ export async function syncOrdersChunked(
     }
 
     const chunk = chunks[i];
-    const chunkFromTs = Math.floor(chunk.from.getTime() / 1000);
-    const chunkToTs = Math.floor(chunk.to.getTime() / 1000);
     const chunkLabel = `${chunk.from.toISOString().slice(0, 10)} — ${chunk.to.toISOString().slice(0, 10)}`;
-
     console.log(`[ChunkedSync] Starting chunk ${i + 1}/${chunks.length}: ${chunkLabel}`);
 
-    let chunkResult: { batchId: string; success: boolean; dateFrom: string; dateTo: string };
-    try {
-      const result = await syncOrders(0, chunkFromTs, chunkToTs, syncType);
-      chunkResult = {
-        batchId: result.batchId,
-        success: result.success,
-        dateFrom: chunk.from.toISOString().slice(0, 10),
-        dateTo: chunk.to.toISOString().slice(0, 10),
-      };
-      console.log(`[ChunkedSync] Chunk ${i + 1}/${chunks.length} ${result.success ? "completed" : "failed"}: ${result.message}`);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[ChunkedSync] Chunk ${i + 1}/${chunks.length} threw error: ${errMsg}`);
-      chunkResult = {
-        batchId: `error-chunk-${i + 1}`,
-        success: false,
-        dateFrom: chunk.from.toISOString().slice(0, 10),
-        dateTo: chunk.to.toISOString().slice(0, 10),
-      };
-    }
-    results.push(chunkResult);
+    // Recursive retry with sub-splitting on failure
+    const subResults = await syncChunkWithRetry(chunk.from, chunk.to, syncType);
+    results.push(...subResults);
 
     // Small pause between chunks to avoid overloading
     if (i < chunks.length - 1 && !cancelRequested) {

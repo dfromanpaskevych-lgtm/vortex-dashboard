@@ -28,6 +28,27 @@ const PRESETS = [
   { label: "Останні 30 днів", days: 30 },
 ] as const;
 
+/** Returns { dateFrom, dateTo } timestamps for the current calendar month (1st → today) */
+function getCurrentMonthRange(): { dateFrom: number; dateTo: number; label: string } {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const to = new Date(now);
+  to.setHours(23, 59, 59, 999);
+  const label = from.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
+  return { dateFrom: Math.floor(from.getTime() / 1000), dateTo: Math.floor(to.getTime() / 1000), label };
+}
+
+/** Returns { dateFrom, dateTo } timestamps for the current quarter (3 months: 1st of 2 months ago → today) */
+function getCurrentQuarterRange(): { dateFrom: number; dateTo: number; label: string } {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0);
+  const to = new Date(now);
+  to.setHours(23, 59, 59, 999);
+  const fromLabel = from.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
+  const toLabel = to.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
+  return { dateFrom: Math.floor(from.getTime() / 1000), dateTo: Math.floor(to.getTime() / 1000), label: `${fromLabel} — ${toLabel}` };
+}
+
 function formatDateUk(d: Date): string {
   return d.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -50,6 +71,8 @@ export default function Sync() {
   const [selectedPreset, setSelectedPreset] = useState<number | null>(3);
   const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  // Special range: "month" | "quarter" | null
+  const [selectedSpecial, setSelectedSpecial] = useState<"month" | "quarter" | null>(null);
 
   const { data: syncStatus } = trpc.sync.status.useQuery(undefined, {
     refetchInterval: 3000,
@@ -102,6 +125,8 @@ export default function Sync() {
 
   // Compute what label to show on the trigger button
   const getSyncLabel = (): string => {
+    if (selectedSpecial === "month") return `Поточний місяць: ${getCurrentMonthRange().label}`;
+    if (selectedSpecial === "quarter") return `Поточний квартал: ${getCurrentQuarterRange().label}`;
     if (selectedPreset !== null) {
       return PRESETS.find(p => p.days === selectedPreset)?.label ?? `Останні ${selectedPreset} днів`;
     }
@@ -114,7 +139,7 @@ export default function Sync() {
     return "Оберіть діапазон";
   };
 
-  const canSync = selectedPreset !== null || (customRange?.from && customRange?.to);
+  const canSync = selectedSpecial !== null || selectedPreset !== null || (customRange?.from && customRange?.to);
 
   const handleSync = () => {
     if (!canSync) {
@@ -122,7 +147,13 @@ export default function Sync() {
       return;
     }
 
-    if (selectedPreset !== null) {
+    if (selectedSpecial === "month") {
+      const { dateFrom, dateTo } = getCurrentMonthRange();
+      triggerSync.mutate({ dateFrom, dateTo });
+    } else if (selectedSpecial === "quarter") {
+      const { dateFrom, dateTo } = getCurrentQuarterRange();
+      triggerSync.mutate({ dateFrom, dateTo });
+    } else if (selectedPreset !== null) {
       triggerSync.mutate({ days: selectedPreset });
     } else if (customRange?.from && customRange?.to) {
       const dateFrom = Math.floor(startOfDay(customRange.from).getTime() / 1000);
@@ -134,12 +165,20 @@ export default function Sync() {
   const handlePresetClick = (days: number) => {
     setSelectedPreset(days);
     setCustomRange(undefined);
+    setSelectedSpecial(null);
+  };
+
+  const handleSpecialClick = (type: "month" | "quarter") => {
+    setSelectedSpecial(type);
+    setSelectedPreset(null);
+    setCustomRange(undefined);
   };
 
   const handleCustomRange = (range: DateRange | undefined) => {
     setCustomRange(range);
     if (range?.from) {
       setSelectedPreset(null);
+      setSelectedSpecial(null);
     }
     if (range?.from && range?.to) {
       setCalendarOpen(false);
@@ -256,13 +295,40 @@ export default function Sync() {
               </div>
             </div>
 
+            {/* Month / Quarter quick-select */}
+            <div>
+              <p className="text-xs text-muted-foreground mb-2 font-medium">Швидкий вибір:</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant={selectedSpecial === "month" ? "default" : "outline"}
+                  size="sm"
+                  className={`justify-start text-xs ${selectedSpecial === "month" ? "bg-blue-600 hover:bg-blue-700" : ""}`}
+                  onClick={() => handleSpecialClick("month")}
+                  disabled={isSyncing}
+                >
+                  <CalendarDays className="h-3 w-3 mr-1.5" />
+                  Поточний місяць
+                </Button>
+                <Button
+                  variant={selectedSpecial === "quarter" ? "default" : "outline"}
+                  size="sm"
+                  className={`justify-start text-xs ${selectedSpecial === "quarter" ? "bg-purple-600 hover:bg-purple-700" : ""}`}
+                  onClick={() => handleSpecialClick("quarter")}
+                  disabled={isSyncing}
+                >
+                  <CalendarDays className="h-3 w-3 mr-1.5" />
+                  Поточний квартал
+                </Button>
+              </div>
+            </div>
+
             {/* Custom date range */}
             <div>
               <p className="text-xs text-muted-foreground mb-2 font-medium">Або власний діапазон:</p>
               <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
                   <Button
-                    variant={selectedPreset === null && customRange?.from ? "default" : "outline"}
+                    variant={selectedPreset === null && selectedSpecial === null && customRange?.from ? "default" : "outline"}
                     size="sm"
                     className="w-full justify-between text-xs"
                     disabled={isSyncing}

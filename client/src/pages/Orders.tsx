@@ -23,15 +23,18 @@ import { Search, ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, Download, Ch
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 
-const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  waiting: { label: "Очікування", variant: "secondary" },
-  pending: { label: "В обробці", variant: "default" },
-  expected: { label: "Очікується", variant: "outline" },
-  in_stock: { label: "На складі", variant: "default" },
-  complete: { label: "Виконано", variant: "default" },
-  canceled: { label: "Скасовано", variant: "destructive" },
-  returned: { label: "Повернуто", variant: "destructive" },
-  archived: { label: "Архів", variant: "secondary" },
+const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
+  waiting:         { label: "Очікування",            variant: "secondary" },
+  pending:         { label: "В обробці",             variant: "outline",     className: "border-blue-500 text-blue-400" },
+  expected:        { label: "Очікується",            variant: "outline",     className: "border-yellow-500 text-yellow-400" },
+  in_stock:        { label: "На складі",             variant: "outline",     className: "border-emerald-500 text-emerald-400" },
+  complete:        { label: "Виконано",              variant: "default",     className: "bg-emerald-700 text-white border-0" },
+  canceled:        { label: "Скасовано",             variant: "destructive" },
+  returned:        { label: "Повернуто",             variant: "outline",     className: "border-orange-500 text-orange-400" },
+  partly_returned: { label: "Часткове повернення",   variant: "outline",     className: "border-orange-400 text-orange-300" },
+  // Vortex API string variants
+  "Parts Return":  { label: "Повернення запчастин",  variant: "outline",     className: "border-orange-500 text-orange-400" },
+  archived:        { label: "Архів",                 variant: "secondary" },
 };
 
 function formatDate(ts: number | null | undefined): string {

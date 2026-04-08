@@ -164,3 +164,9 @@
 - [x] DB migration: add 'cancelled' to sync_logs status enum
 - [x] 69 tests passing
 - [ ] Deploy cancel sync feature
+- [x] Fix STATUS_MAP: add partly_returned, Parts Return, improve badge colors
+- [x] Sync: add "Поточний місяць" and "Поточний квартал" quick-select buttons
+- [x] Sync: improve custom date range UI
+- [x] Sync: recursive chunk splitting on error (syncChunkWithRetry: 7→3+4→1 day)
+- [x] 69 tests passing, TypeScript 0 errors
+- [ ] Deploy all above changes
