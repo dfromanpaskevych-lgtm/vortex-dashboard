@@ -1,0 +1,1 @@
+ALTER TABLE `order_items` ADD `balanceCurrencyBasePrice` decimal(12,2);

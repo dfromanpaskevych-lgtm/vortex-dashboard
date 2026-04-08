@@ -60,6 +60,9 @@ interface OrderFilters {
   client?: string;
   dateFrom?: number;
   dateTo?: number;
+  qtyMin?: number;
+  qtyMax?: number;
+  basePriceCurrency?: string;
   sortField?: string;
   sortDir?: "asc" | "desc";
   page?: number;
@@ -91,27 +94,27 @@ export async function getOrdersList(filters: OrderFilters) {
   // Build combined where for items join — excludes ВЛАСНА ЛОГІСТИКА from orders tab
   const buildFullWhere = () => {
     const logisticsExclude = sql`${orderItems.code} != 'ВЛАСНА ЛОГІСТИКА'`;
-    if (filters.status || filters.brand || filters.search) {
-      return and(
-        whereClause,
-        logisticsExclude,
-        filters.status ? eq(orderItems.status, filters.status) : undefined,
-        filters.brand ? like(orderItems.brandName, `%${filters.brand}%`) : undefined,
-        filters.search
-          ? or(
-              like(orders.vortexOrderId, `%${filters.search}%`),
-              like(orders.clientName, `%${filters.search}%`),
-              like(orders.managerName, `%${filters.search}%`),
-              like(orderItems.code, `%${filters.search}%`),
-              like(orderItems.description, `%${filters.search}%`),
-              like(orderItems.brandName, `%${filters.search}%`),
-              like(orders.trackNumber, `%${filters.search}%`),
-              like(orders.customerPhone, `%${filters.search}%`)
-            )
-          : undefined
-      );
-    }
-    return and(whereClause, logisticsExclude);
+    return and(
+      whereClause,
+      logisticsExclude,
+      filters.status ? eq(orderItems.status, filters.status) : undefined,
+      filters.brand ? like(orderItems.brandName, `%${filters.brand}%`) : undefined,
+      filters.basePriceCurrency ? eq(orderItems.basePriceCurrency, filters.basePriceCurrency.toLowerCase()) : undefined,
+      filters.qtyMin != null ? gte(orderItems.qty, filters.qtyMin) : undefined,
+      filters.qtyMax != null ? lte(orderItems.qty, filters.qtyMax) : undefined,
+      filters.search
+        ? or(
+            like(orders.vortexOrderId, `%${filters.search}%`),
+            like(orders.clientName, `%${filters.search}%`),
+            like(orders.managerName, `%${filters.search}%`),
+            like(orderItems.code, `%${filters.search}%`),
+            like(orderItems.description, `%${filters.search}%`),
+            like(orderItems.brandName, `%${filters.search}%`),
+            like(orders.trackNumber, `%${filters.search}%`),
+            like(orders.customerPhone, `%${filters.search}%`)
+          )
+        : undefined
+    );
   };
 
   // Get total count

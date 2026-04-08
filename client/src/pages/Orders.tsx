@@ -66,6 +66,9 @@ export default function Orders() {
   const [pageSize, setPageSize] = useState(50);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [qtyMin, setQtyMin] = useState("");
+  const [qtyMax, setQtyMax] = useState("");
+  const [basePriceCurrency, setBasePriceCurrency] = useState("");
 
   // Convert date strings to unix timestamps
   const dateFromTs = useMemo(() => {
@@ -85,11 +88,14 @@ export default function Orders() {
     client: client || undefined,
     dateFrom: dateFromTs,
     dateTo: dateToTs,
+    qtyMin: qtyMin ? Number(qtyMin) : undefined,
+    qtyMax: qtyMax ? Number(qtyMax) : undefined,
+    basePriceCurrency: basePriceCurrency || undefined,
     sortField,
     sortDir,
     page,
     pageSize,
-  }), [search, manager, status, brand, client, dateFromTs, dateToTs, sortField, sortDir, page, pageSize]);
+  }), [search, manager, status, brand, client, dateFromTs, dateToTs, qtyMin, qtyMax, basePriceCurrency, sortField, sortDir, page, pageSize]);
 
   const { data, isLoading } = trpc.orders.list.useQuery(queryInput);
   const { data: filterOptions } = trpc.orders.filterOptions.useQuery();
@@ -121,10 +127,13 @@ export default function Orders() {
     setClient("");
     setDateFrom("");
     setDateTo("");
+    setQtyMin("");
+    setQtyMax("");
+    setBasePriceCurrency("");
     setPage(1);
   };
 
-  const hasFilters = search || manager || status || brand || client || dateFrom || dateTo;
+  const hasFilters = search || manager || status || brand || client || dateFrom || dateTo || qtyMin || qtyMax || basePriceCurrency;
 
   const handleExportExcel = () => {
     toast.info("Генерація Excel файлу...");
@@ -316,6 +325,40 @@ export default function Orders() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Вхідна валюта</label>
+                <Select value={basePriceCurrency} onValueChange={(v) => { setBasePriceCurrency(v === "_all" ? "" : v); setPage(1); }}>
+                  <SelectTrigger><SelectValue placeholder="Всі валюти" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_all">Всі валюти</SelectItem>
+                    <SelectItem value="uah">UAH (гривня)</SelectItem>
+                    <SelectItem value="eur">EUR (євро)</SelectItem>
+                    <SelectItem value="usd">USD (долар)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Кількість від</label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="Напр. 2"
+                  value={qtyMin}
+                  onChange={(e) => { setQtyMin(e.target.value); setPage(1); }}
+                  className="h-9"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Кількість до</label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="Напр. 10"
+                  value={qtyMax}
+                  onChange={(e) => { setQtyMax(e.target.value); setPage(1); }}
+                  className="h-9"
+                />
               </div>
             </div>
           </CardContent>

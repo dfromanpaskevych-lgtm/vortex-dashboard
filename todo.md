@@ -138,3 +138,6 @@
 - [x] REST API: Add manusDelta, manusSaleTotal, manusInputTotal fields to both /orders and /orders/:id
 - [x] Vitest: 4 new tests for MANUS formula correctness (60 total, all passing)
 - [ ] Deploy after implementation
+- [x] Filter: add qty filter (min/max quantity) in db.ts, tRPC router, UI
+- [x] Filter: add basePriceCurrency filter (UAH/EUR/USD) in db.ts, tRPC router, UI
+- [ ] Deploy new filters
