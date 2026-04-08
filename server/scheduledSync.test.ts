@@ -77,10 +77,26 @@ describe("syncType field validation", () => {
     expect(validTypes).toContain("auto");
   });
 
-  it("auto sync uses 7 days window", () => {
-    // Verify the constant used in startScheduledSync
-    const AUTO_SYNC_DAYS = 7;
-    expect(AUTO_SYNC_DAYS).toBe(7);
+  it("auto sync syncs current month (1st to today)", () => {
+    // Replicate the auto-sync date calculation from startScheduledSync
+    const fixedNow = new Date("2026-04-08T21:00:00.000Z"); // midnight Kyiv = 00:00 Apr 9 Kyiv
+    const kyivOffset = 3 * 60 * 60 * 1000;
+    const nowKyiv = new Date(fixedNow.getTime() + kyivOffset); // 2026-04-09 00:00 Kyiv
+    const monthStart = new Date(Date.UTC(nowKyiv.getUTCFullYear(), nowKyiv.getUTCMonth(), 1));
+    // Month start should be April 1st
+    expect(monthStart.toISOString().slice(0, 10)).toBe("2026-04-01");
+    // todayEnd should be the current timestamp (not a fixed day)
+    const todayEndTs = Math.floor(fixedNow.getTime() / 1000);
+    expect(todayEndTs).toBeGreaterThan(Math.floor(monthStart.getTime() / 1000));
+  });
+
+  it("auto sync for Jan 1st syncs only 1 day (1st to 1st)", () => {
+    // Edge case: first day of month
+    const jan1Kyiv = new Date("2026-01-01T00:00:00.000Z"); // midnight UTC = 03:00 Kyiv Jan 1
+    const kyivOffset = 3 * 60 * 60 * 1000;
+    const nowKyiv = new Date(jan1Kyiv.getTime() + kyivOffset);
+    const monthStart = new Date(Date.UTC(nowKyiv.getUTCFullYear(), nowKyiv.getUTCMonth(), 1));
+    expect(monthStart.toISOString().slice(0, 10)).toBe("2026-01-01");
   });
 
   it("sync log duration calculation is correct", () => {

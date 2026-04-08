@@ -766,7 +766,13 @@ export function startScheduledSync() {
       syncTimeout = null;
       console.log("[Sync] Auto daily sync triggered (00:00 Kyiv)");
       try {
-        await syncOrdersChunked(7, undefined, undefined, "auto"); // sync last 7 days via chunks
+        // Sync entire current month: from 1st of current month (Kyiv time) to today
+        const nowKyiv = new Date(Date.now() + 3 * 60 * 60 * 1000); // UTC+3
+        const monthStart = new Date(Date.UTC(nowKyiv.getUTCFullYear(), nowKyiv.getUTCMonth(), 1));
+        const monthStartTs = Math.floor(monthStart.getTime() / 1000);
+        const todayEndTs = Math.floor(Date.now() / 1000);
+        console.log(`[Sync] Auto-sync: current month ${monthStart.toISOString().slice(0, 10)} — today`);
+        await syncOrdersChunked(0, monthStartTs, todayEndTs, "auto"); // sync current month via chunks
       } catch (error) {
         console.error("[Sync] Auto sync error:", error);
       }
@@ -963,16 +969,27 @@ export async function syncOrdersChunked(
 
     console.log(`[ChunkedSync] Starting chunk ${i + 1}/${chunks.length}: ${chunkLabel}`);
 
-    const result = await syncOrders(0, chunkFromTs, chunkToTs, syncType);
-
-    results.push({
-      batchId: result.batchId,
-      success: result.success,
-      dateFrom: chunk.from.toISOString().slice(0, 10),
-      dateTo: chunk.to.toISOString().slice(0, 10),
-    });
-
-    console.log(`[ChunkedSync] Chunk ${i + 1}/${chunks.length} ${result.success ? "completed" : "failed"}: ${result.message}`);
+    let chunkResult: { batchId: string; success: boolean; dateFrom: string; dateTo: string };
+    try {
+      const result = await syncOrders(0, chunkFromTs, chunkToTs, syncType);
+      chunkResult = {
+        batchId: result.batchId,
+        success: result.success,
+        dateFrom: chunk.from.toISOString().slice(0, 10),
+        dateTo: chunk.to.toISOString().slice(0, 10),
+      };
+      console.log(`[ChunkedSync] Chunk ${i + 1}/${chunks.length} ${result.success ? "completed" : "failed"}: ${result.message}`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[ChunkedSync] Chunk ${i + 1}/${chunks.length} threw error: ${errMsg}`);
+      chunkResult = {
+        batchId: `error-chunk-${i + 1}`,
+        success: false,
+        dateFrom: chunk.from.toISOString().slice(0, 10),
+        dateTo: chunk.to.toISOString().slice(0, 10),
+      };
+    }
+    results.push(chunkResult);
 
     // Small pause between chunks to avoid overloading
     if (i < chunks.length - 1) {

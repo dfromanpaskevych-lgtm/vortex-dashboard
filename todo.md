@@ -152,4 +152,8 @@
 - [x] Each chunk logged separately with its date range, status, start/end time
 - [x] Night auto-sync (00:00 Kyiv, 7 days) uses same chunked logic (syncOrdersChunked)
 - [x] 68 tests passing (7 new chunk split tests)
-- [ ] Deploy chunked sync
+- [x] Deploy chunked sync — https://vortex-ai.manus.space
+- [x] Fix auto-sync: sync current month (1st to today) instead of last 7 days
+- [x] Ensure chunk errors don't stop other chunks (try/catch per chunk, continue on error)
+- [x] Update scheduledSync tests for new month-based logic (69 tests passing)
+- [ ] Deploy auto-sync fix
