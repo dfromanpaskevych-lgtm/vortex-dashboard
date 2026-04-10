@@ -163,10 +163,11 @@
 - [x] Cancel sync: add "Зупинити" button in Sync.tsx (visible only when sync is running, orange badge in history)
 - [x] DB migration: add 'cancelled' to sync_logs status enum
 - [x] 69 tests passing
-- [ ] Deploy cancel sync feature
+- [x] Deploy cancel sync feature
 - [x] Fix STATUS_MAP: add partly_returned, Parts Return, improve badge colors
 - [x] Sync: add "Поточний місяць" and "Поточний квартал" quick-select buttons
 - [x] Sync: improve custom date range UI
 - [x] Sync: recursive chunk splitting on error (syncChunkWithRetry: 7→3+4→1 day)
 - [x] 69 tests passing, TypeScript 0 errors
-- [ ] Deploy all above changes
+- [x] Deploy all above changes — https://vortex-ai.manus.space
+- [x] Збільшити page_size get_rg_list з 50 до 1000 (підтверджено Vortex)

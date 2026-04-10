@@ -78,11 +78,12 @@ function sleep(ms: number): Promise<void> {
 /**
  * Make a single API request to Vortex.
  * Uses raw HTTP (no axios) with fresh connections.
+ * Timeout: 30s (Vortex API is fast when healthy).
  */
 async function makeApiRequest(
   method: string,
   methodData: Record<string, unknown>,
-  timeout = 120000
+  timeout = 30000
 ): Promise<unknown> {
   const currentTime = Math.floor(Date.now() / 1000);
   const randVal = Math.floor(Math.random() * 90000) + 10000;
@@ -112,18 +113,18 @@ async function makeApiRequest(
 }
 
 /**
- * Make API request with aggressive retry strategy.
- * - Up to 7 attempts
- * - Increasing pauses between retries (3s, 5s, 8s, 12s, 18s, 25s)
- * - 120s timeout per request
+ * Make API request with retry strategy.
+ * - Up to 5 attempts
+ * - Short pauses between retries: 1s, 2s, 4s, 8s
+ * - 30s timeout per request (60s for get_order_by_id)
  */
 async function makeApiRequestWithRetry(
   method: string,
   methodData: Record<string, unknown>,
-  maxRetries = 7,
-  timeout = 120000
+  maxRetries = 5,
+  timeout = 30000
 ): Promise<unknown> {
-  const retryDelays = [3000, 5000, 8000, 12000, 18000, 25000, 30000];
+  const retryDelays = [1000, 2000, 4000, 8000, 15000];
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -135,7 +136,7 @@ async function makeApiRequestWithRetry(
       console.warn(`[VortexAPI] ${method} attempt ${attempt + 1}/${maxRetries} FAILED: ${errMsg}`);
 
       if (attempt < maxRetries - 1) {
-        const waitTime = retryDelays[attempt] || 30000;
+        const waitTime = retryDelays[attempt] || 15000;
         console.log(`[VortexAPI] Waiting ${waitTime / 1000}s before retry...`);
         await sleep(waitTime);
       }
@@ -162,7 +163,7 @@ export async function getOrders(
  * Get a single order by ID.
  */
 export async function getOrderById(orderId: string): Promise<Record<string, unknown>> {
-  const result = await makeApiRequestWithRetry("get_order_by_id", { or_id: Number(orderId) }, 5, 120000);
+  const result = await makeApiRequestWithRetry("get_order_by_id", { or_id: Number(orderId) }, 5, 30000);
   return result as Record<string, unknown>;
 }
 
@@ -259,12 +260,13 @@ export async function fetchOrdersForDay(
 /**
  * Get RG list (receipts/invoices from suppliers) for a timestamp range.
  * Returns array of RG entries with supplier info.
+ * page_size=1000 to minimize number of requests.
  */
 export async function getRgList(
   startTimestamp: number,
   endTimestamp: number,
   page = 0,
-  pageSize = 50
+  pageSize = 1000
 ): Promise<Array<Record<string, unknown>>> {
   const result = await makeApiRequestWithRetry("get_rg_list", {
     page,
@@ -282,11 +284,10 @@ export async function getRgList(
 
   console.log(`[VortexAPI] get_rg_list: received ${items.length} RG entries (page ${page})`);
 
-  // If next_page_exists, fetch more
+  // If next_page_exists, fetch more (no pause — fast API)
   const allItems = [...items];
   if (result.next_page_exists) {
     console.log(`[VortexAPI] get_rg_list: fetching next page...`);
-    await sleep(3000);
     const nextItems = await getRgList(startTimestamp, endTimestamp, page + 1, pageSize);
     allItems.push(...nextItems);
   }
@@ -328,9 +329,6 @@ export async function fetchRgByDateRange(
     }
 
     current.setDate(current.getDate() + 1);
-    if (current <= endDay) {
-      await sleep(3000);
-    }
   }
 
   console.log(`[VortexAPI] Total RG entries: ${allRg.length}`);
@@ -338,8 +336,8 @@ export async function fetchRgByDateRange(
 }
 
 /**
- * Fetch orders for the last N days, one day at a time.
- * Large pauses between days to avoid overloading the API.
+ * Fetch orders for a date range, one day at a time.
+ * No artificial pauses between days — requests are sequential but immediate.
  */
 export async function fetchOrdersByDateRange(
   startDate: Date,
@@ -371,12 +369,6 @@ export async function fetchOrdersByDateRange(
     // Move to next day
     current.setDate(current.getDate() + 1);
     dayIndex++;
-
-    // Large pause between days (5 seconds) to let the API breathe
-    if (current <= endDay) {
-      console.log(`[VortexAPI] Pausing 5s before next day...`);
-      await sleep(5000);
-    }
   }
 
   console.log(`[VortexAPI] Total: ${allOrders.length} valid orders from ${dayIndex} days`);
