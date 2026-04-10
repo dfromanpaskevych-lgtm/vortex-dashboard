@@ -1,6 +1,6 @@
-import { eq, and, or, like, desc, asc, sql, between, gte, lte, inArray, count } from "drizzle-orm";
+import { eq, and, or, like, desc, asc, sql, between, gte, lte, inArray, count, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, orders, orderItems, changeLogs, syncLogs } from "../drizzle/schema";
+import { InsertUser, users, orders, orderItems, changeLogs, syncLogs, syncRuns } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -475,6 +475,61 @@ export async function getSyncLogsList(limit = 50) {
   return db
     .select()
     .from(syncLogs)
+    .orderBy(desc(syncLogs.startedAt))
+    .limit(limit);
+}
+
+/**
+ * Returns sync runs (parent records) with their child chunks.
+ * Each run includes a `chunks` array of sync_logs belonging to it.
+ * Legacy sync_logs without a runId are returned as standalone runs.
+ */
+export async function getSyncRunsList(limit = 30) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Fetch recent runs
+  const runs = await db
+    .select()
+    .from(syncRuns)
+    .orderBy(desc(syncRuns.startedAt))
+    .limit(limit);
+
+  if (runs.length === 0) return [];
+
+  // Fetch all chunks for these runs
+  const runIds = runs.map(r => r.runId);
+  const allChunks = await db
+    .select()
+    .from(syncLogs)
+    .where(inArray(syncLogs.runId, runIds))
+    .orderBy(syncLogs.chunkIndex);
+
+  // Group chunks by runId
+  const chunksByRun = new Map<string, typeof allChunks>();
+  for (const chunk of allChunks) {
+    if (!chunk.runId) continue;
+    if (!chunksByRun.has(chunk.runId)) chunksByRun.set(chunk.runId, []);
+    chunksByRun.get(chunk.runId)!.push(chunk);
+  }
+
+  return runs.map(run => ({
+    ...run,
+    chunks: chunksByRun.get(run.runId) ?? [],
+  }));
+}
+
+/**
+ * Returns legacy sync_logs that have no runId (created before grouping feature).
+ */
+export async function getLegacySyncLogs(limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(syncLogs)
+    .where(isNull(syncLogs.runId))
     .orderBy(desc(syncLogs.startedAt))
     .limit(limit);
 }

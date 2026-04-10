@@ -1,6 +1,6 @@
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { getDb } from "./db";
-import { orders, orderItems, orderSnapshots, changeLogs, syncLogs } from "../drizzle/schema";
+import { orders, orderItems, orderSnapshots, changeLogs, syncLogs, syncRuns } from "../drizzle/schema";
 import { fetchOrdersByDateRange, fetchRgByDateRange, getOrderById } from "./vortexClient";
 import { nanoid } from "nanoid";
 import { fireSyncWebhooks } from "./webhookService";
@@ -418,8 +418,10 @@ async function syncOrdersInternal(
   days = 3,
   dateFrom?: number,
   dateTo?: number,
-  syncType: "manual" | "auto" = "manual"
-): Promise<{ batchId: string; success: boolean; message: string }> {
+  syncType: "manual" | "auto" = "manual",
+  runId?: string,
+  chunkIndex?: number
+): Promise<{ batchId: string; success: boolean; message: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number }> {
   const batchId = nanoid();
   const db = await getDb();
 
@@ -452,6 +454,8 @@ async function syncOrdersInternal(
     const startedAt = new Date();
     await db.insert(syncLogs).values({
       batchId,
+      runId: runId ?? null,
+      chunkIndex: chunkIndex ?? null,
       status: "running",
       syncType,
       ordersProcessed: 0,
@@ -734,7 +738,15 @@ async function syncOrdersInternal(
       });
     }
 
-    return { batchId, success: true, message: msg };
+    return {
+      batchId,
+      success: true,
+      message: msg,
+      ordersProcessed: fetchedOrders.length,
+      itemsProcessed: totalItems,
+      newOrders: newCount,
+      modifiedOrders: modifiedCount,
+    };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error(`[Sync] Failed:`, errMsg);
@@ -748,7 +760,7 @@ async function syncOrdersInternal(
       })
       .where(eq(syncLogs.batchId, batchId));
 
-    return { batchId, success: false, message: errMsg };
+    return { batchId, success: false, message: errMsg, ordersProcessed: 0, itemsProcessed: 0, newOrders: 0, modifiedOrders: 0 };
   }
 }
 
@@ -968,8 +980,10 @@ async function syncChunkWithRetry(
   from: Date,
   to: Date,
   syncType: "manual" | "auto",
-  depth = 0
-): Promise<Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }>> {
+  depth = 0,
+  runId?: string,
+  chunkIndex?: number
+): Promise<Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number }>> {
   const fromTs = Math.floor(from.getTime() / 1000);
   const toTs = Math.floor(to.getTime() / 1000);
   const fromStr = from.toISOString().slice(0, 10);
@@ -979,9 +993,9 @@ async function syncChunkWithRetry(
 
   console.log(`${indent}[ChunkRetry] Trying ${fromStr} — ${toStr} (${totalDays} days, depth=${depth})`);
 
-  let result: { batchId: string; success: boolean; message: string };
+  let result: { batchId: string; success: boolean; message: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number };
   try {
-    result = await syncOrdersInternal(0, fromTs, toTs, syncType);
+    result = await syncOrdersInternal(0, fromTs, toTs, syncType, runId, chunkIndex);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     result = { batchId: `err-${nanoid(6)}`, success: false, message: errMsg };
@@ -989,7 +1003,7 @@ async function syncChunkWithRetry(
 
   if (result.success) {
     console.log(`${indent}[ChunkRetry] ✅ Success: ${fromStr} — ${toStr}`);
-    return [{ batchId: result.batchId, success: true, dateFrom: fromStr, dateTo: toStr }];
+    return [{ batchId: result.batchId, success: true, dateFrom: fromStr, dateTo: toStr, ordersProcessed: result.ordersProcessed, itemsProcessed: result.itemsProcessed, newOrders: result.newOrders, modifiedOrders: result.modifiedOrders }];
   }
 
   // Failed — can we split further?
@@ -1010,10 +1024,10 @@ async function syncChunkWithRetry(
 
   console.log(`${indent}[ChunkRetry] Splitting ${fromStr}—${toStr} into [${fromStr}—${mid.toISOString().slice(0,10)}] + [${midNext.toISOString().slice(0,10)}—${toStr}]`);
 
-  const leftResults = await syncChunkWithRetry(from, mid, syncType, depth + 1);
+  const leftResults = await syncChunkWithRetry(from, mid, syncType, depth + 1, runId, chunkIndex);
   // Small pause between sub-chunks
   await new Promise(r => setTimeout(r, 2000));
-  const rightResults = await syncChunkWithRetry(midNext, to, syncType, depth + 1);
+  const rightResults = await syncChunkWithRetry(midNext, to, syncType, depth + 1, runId, chunkIndex);
 
   return [...leftResults, ...rightResults];
 }
@@ -1048,7 +1062,7 @@ async function _syncOrdersChunkedInner(
   dateFrom: number | undefined,
   dateTo: number | undefined,
   syncType: "manual" | "auto"
-): Promise<{ success: boolean; message: string; chunks: number; results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> }> {
+): Promise<{ success: boolean; message: string; chunks: number; runId: string; results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> }> {
   // Calculate full date range
   let startDate: Date;
   let endDate: Date;
@@ -1071,7 +1085,29 @@ async function _syncOrdersChunkedInner(
 
   console.log(`[ChunkedSync] Period: ${startDate.toISOString().slice(0, 10)} — ${endDate.toISOString().slice(0, 10)} (${totalDays} days, ${chunks.length} chunks)`);
 
-  const results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> = [];
+  // Create parent sync_run record
+  const runId = nanoid();
+  const db = await getDb();
+  if (db) {
+    await db.insert(syncRuns).values({
+      runId,
+      status: "running",
+      syncType,
+      dateFrom: startDate.toISOString().slice(0, 10),
+      dateTo: endDate.toISOString().slice(0, 10),
+      totalChunks: chunks.length,
+      completedChunks: 0,
+      failedChunks: 0,
+      cancelledChunks: 0,
+      ordersProcessed: 0,
+      itemsProcessed: 0,
+      newOrders: 0,
+      modifiedOrders: 0,
+      startedAt: new Date(),
+    });
+  }
+
+  const results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number }> = [];
 
   // Reset cancel flag at start of new chunked run
   cancelRequested = false;
@@ -1082,13 +1118,15 @@ async function _syncOrdersChunkedInner(
     if (cancelRequested) {
       console.log(`[ChunkedSync] Cancellation detected before chunk ${i + 1}/${chunks.length} — stopping.`);
       // Log remaining chunks as cancelled in DB
-      const db = await getDb();
-      if (db) {
+      const dbInner = await getDb();
+      if (dbInner) {
         for (let j = i; j < chunks.length; j++) {
           const cancelBatchId = nanoid();
           const cancelChunk = chunks[j];
-          await db.insert(syncLogs).values({
+          await dbInner.insert(syncLogs).values({
             batchId: cancelBatchId,
+            runId,
+            chunkIndex: j + 1,
             status: "cancelled",
             syncType,
             ordersProcessed: 0,
@@ -1117,9 +1155,28 @@ async function _syncOrdersChunkedInner(
     const chunkLabel = `${chunk.from.toISOString().slice(0, 10)} — ${chunk.to.toISOString().slice(0, 10)}`;
     console.log(`[ChunkedSync] Starting chunk ${i + 1}/${chunks.length}: ${chunkLabel}`);
 
-    // Recursive retry with sub-splitting on failure
-    const subResults = await syncChunkWithRetry(chunk.from, chunk.to, syncType);
+    // Recursive retry with sub-splitting on failure — pass runId and chunkIndex
+    const subResults = await syncChunkWithRetry(chunk.from, chunk.to, syncType, 0, runId, i + 1);
     results.push(...subResults);
+
+    // Update run progress after each chunk
+    const dbProgress = await getDb();
+    if (dbProgress) {
+      const completedSoFar = results.filter(r => r.success).length;
+      const failedSoFar = results.filter(r => !r.success).length;
+      const totalOrders = results.reduce((s, r) => s + (r.ordersProcessed ?? 0), 0);
+      const totalItems = results.reduce((s, r) => s + (r.itemsProcessed ?? 0), 0);
+      const totalNew = results.reduce((s, r) => s + (r.newOrders ?? 0), 0);
+      const totalMod = results.reduce((s, r) => s + (r.modifiedOrders ?? 0), 0);
+      await dbProgress.update(syncRuns).set({
+        completedChunks: completedSoFar,
+        failedChunks: failedSoFar,
+        ordersProcessed: totalOrders,
+        itemsProcessed: totalItems,
+        newOrders: totalNew,
+        modifiedOrders: totalMod,
+      }).where(eq(syncRuns.runId, runId));
+    }
 
     // Small pause between chunks to avoid overloading
     if (i < chunks.length - 1 && !cancelRequested) {
@@ -1130,13 +1187,39 @@ async function _syncOrdersChunkedInner(
 
   const successCount = results.filter(r => r.success).length;
   const failCount = results.filter(r => !r.success).length;
+  const cancelCount = results.filter(r => !r.success && results.length < chunks.length).length;
   const msg = `Chunked sync completed: ${successCount}/${chunks.length} chunks successful${failCount > 0 ? `, ${failCount} failed` : ""}`;
   console.log(`[ChunkedSync] ${msg}`);
 
+  // Determine final run status
+  const wasCancelled = cancelRequested;
+  const finalStatus = wasCancelled ? "cancelled" : failCount > 0 ? "failed" : "completed";
+
+  // Update parent run with final stats
+  const dbFinal = await getDb();
+  if (dbFinal) {
+    const totalOrders = results.reduce((s, r) => s + (r.ordersProcessed ?? 0), 0);
+    const totalItems = results.reduce((s, r) => s + (r.itemsProcessed ?? 0), 0);
+    const totalNew = results.reduce((s, r) => s + (r.newOrders ?? 0), 0);
+    const totalMod = results.reduce((s, r) => s + (r.modifiedOrders ?? 0), 0);
+    await dbFinal.update(syncRuns).set({
+      status: finalStatus,
+      completedChunks: successCount,
+      failedChunks: failCount,
+      cancelledChunks: cancelCount,
+      ordersProcessed: totalOrders,
+      itemsProcessed: totalItems,
+      newOrders: totalNew,
+      modifiedOrders: totalMod,
+      completedAt: new Date(),
+    }).where(eq(syncRuns.runId, runId));
+  }
+
   return {
-    success: failCount === 0,
+    success: failCount === 0 && !wasCancelled,
     message: msg,
     chunks: chunks.length,
+    runId,
     results,
   };
 }

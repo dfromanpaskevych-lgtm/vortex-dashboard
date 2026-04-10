@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -81,12 +81,25 @@ export default function Sync() {
     refetchInterval: 5000,
   });
   const { data: syncLogs, isLoading: logsLoading } = trpc.sync.logs.useQuery();
+  const { data: syncRunsData, isLoading: runsLoading } = trpc.sync.runs.useQuery(undefined, {
+    refetchInterval: 3000,
+  });
+  const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
+  const toggleRun = useCallback((runId: string) => {
+    setExpandedRuns(prev => {
+      const next = new Set(prev);
+      if (next.has(runId)) next.delete(runId);
+      else next.add(runId);
+      return next;
+    });
+  }, []);
 
   const triggerSync = trpc.sync.trigger.useMutation({
     onSuccess: (data) => {
       toast.success(data.message || "Синхронізацію запущено");
       utils.sync.status.invalidate();
       utils.sync.logs.invalidate();
+      utils.sync.runs.invalidate();
     },
     onError: (err: { message: string }) => {
       toast.error("Помилка: " + err.message);
@@ -102,6 +115,7 @@ export default function Sync() {
       }
       utils.sync.status.invalidate();
       utils.sync.logs.invalidate();
+      utils.sync.runs.invalidate();
     },
     onError: (err: { message: string }) => {
       toast.error("Помилка зупинки: " + err.message);
@@ -469,7 +483,7 @@ export default function Sync() {
         </Card>
       </div>
 
-      {/* Sync History */}
+      {/* Sync History — Grouped by Run */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -477,112 +491,190 @@ export default function Sync() {
             Історія синхронізацій
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead className="whitespace-nowrap">Тип</TableHead>
-                <TableHead className="whitespace-nowrap">Діапазон дат</TableHead>
-                <TableHead className="whitespace-nowrap">Початок</TableHead>
-                <TableHead className="whitespace-nowrap">Завершення</TableHead>
-                <TableHead className="whitespace-nowrap">Тривалість</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead className="text-right">Оброблено</TableHead>
-                <TableHead className="text-right">Нових</TableHead>
-                <TableHead className="text-right">Змінених</TableHead>
-                <TableHead className="text-right">Видалених</TableHead>
-                <TableHead>Помилка</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {logsLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    {Array.from({ length: 11 }).map((_, j) => (
-                      <TableCell key={j}>
-                        <div className="h-4 bg-muted animate-pulse rounded" />
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : !syncLogs || syncLogs.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
-                    Синхронізацій ще не було
-                  </TableCell>
-                </TableRow>
-              ) : (
-                syncLogs.map((log: Record<string, unknown>) => {
-                  const startedAt = log.startedAt ? new Date(log.startedAt as string) : null;
-                  const completedAt = log.completedAt ? new Date(log.completedAt as string) : null;
-                  const durationMs = startedAt && completedAt ? completedAt.getTime() - startedAt.getTime() : null;
-                  const durationStr = durationMs != null
-                    ? durationMs < 60000
-                      ? `${Math.round(durationMs / 1000)}с`
-                      : `${Math.floor(durationMs / 60000)}хв ${Math.round((durationMs % 60000) / 1000)}с`
-                    : log.status === "running" ? "..." : "—";
-                  return (
-                    <TableRow key={String(log.id)} className="hover:bg-muted/30 transition-colors">
-                      <TableCell>
+        <CardContent className="space-y-2">
+          {runsLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-14 bg-muted animate-pulse rounded-lg" />
+            ))
+          ) : !syncRunsData || (syncRunsData.runs.length === 0 && syncRunsData.legacy.length === 0) ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">Синхронізацій ще не було</div>
+          ) : (
+            <>
+              {/* Grouped runs */}
+              {syncRunsData.runs.map((run: Record<string, unknown>) => {
+                const runId = String(run.runId);
+                const isExpanded = expandedRuns.has(runId);
+                const startedAt = run.startedAt ? new Date(run.startedAt as string) : null;
+                const completedAt = run.completedAt ? new Date(run.completedAt as string) : null;
+                const durationMs = startedAt && completedAt ? completedAt.getTime() - startedAt.getTime() : null;
+                const durationStr = durationMs != null
+                  ? durationMs < 60000 ? `${Math.round(durationMs / 1000)}с` : `${Math.floor(durationMs / 60000)}хв ${Math.round((durationMs % 60000) / 1000)}с`
+                  : run.status === "running" ? "..." : "—";
+                const chunks = (run.chunks as unknown[]) ?? [];
+                const totalChunks = Number(run.totalChunks) || chunks.length || 1;
+                const completedChunks = Number(run.completedChunks) || 0;
+                const failedChunks = Number(run.failedChunks) || 0;
+                const statusColor = run.status === "completed" ? "text-green-500" : run.status === "failed" ? "text-red-500" : run.status === "cancelled" ? "text-orange-500" : "text-blue-500";
+
+                return (
+                  <div key={runId} className="border rounded-lg overflow-hidden">
+                    {/* Parent run row */}
+                    <button
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors text-left"
+                      onClick={() => toggleRun(runId)}
+                    >
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+
+                      {/* Status icon */}
+                      <span className={`flex-shrink-0 ${statusColor}`}>
+                        {run.status === "completed" ? <CheckCircle2 className="h-4 w-4" /> :
+                         run.status === "failed" ? <XCircle className="h-4 w-4" /> :
+                         run.status === "cancelled" ? <StopCircle className="h-4 w-4" /> :
+                         <Loader2 className="h-4 w-4 animate-spin" />}
+                      </span>
+
+                      {/* Date range */}
+                      <span className="font-medium text-sm flex-1 min-w-0">
+                        {run.dateFrom && run.dateTo ? `${run.dateFrom} — ${run.dateTo}` : "—"}
+                        <span className="ml-2 text-xs text-muted-foreground font-normal">
+                          ({totalChunks} {totalChunks === 1 ? "чанк" : totalChunks < 5 ? "чанки" : "чанків"})
+                        </span>
+                      </span>
+
+                      {/* Type badge */}
+                      <Badge variant="outline" className="text-[10px] gap-1 flex-shrink-0">
+                        {run.syncType === "auto" ? <><Bot className="h-3 w-3" /> Авто</> : <><User className="h-3 w-3" /> Ручна</>}
+                      </Badge>
+
+                      {/* Chunk progress */}
+                      {run.status === "running" ? (
+                        <span className="text-xs text-muted-foreground flex-shrink-0">Чанк {completedChunks + failedChunks + 1}/{totalChunks}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground flex-shrink-0">{completedChunks}/{totalChunks} успішно</span>
+                      )}
+
+                      {/* Stats */}
+                      <span className="text-xs text-muted-foreground flex-shrink-0 hidden sm:block">
+                        {Number(run.ordersProcessed) || 0} зам.
+                        {Number(run.newOrders) > 0 && <span className="text-green-500 ml-1">+{Number(run.newOrders)}</span>}
+                        {Number(run.modifiedOrders) > 0 && <span className="text-yellow-500 ml-1">~{Number(run.modifiedOrders)}</span>}
+                      </span>
+
+                      {/* Duration */}
+                      <span className="text-xs font-mono text-muted-foreground flex-shrink-0">{durationStr}</span>
+
+                      {/* Time */}
+                      <span className="text-xs text-muted-foreground flex-shrink-0 hidden md:block">
+                        {startedAt ? startedAt.toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </span>
+                    </button>
+
+                    {/* Expanded chunk list */}
+                    {isExpanded && chunks.length > 0 && (
+                      <div className="border-t bg-muted/20">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/40">
+                              <TableHead className="pl-10 text-xs">#</TableHead>
+                              <TableHead className="text-xs">Діапазон</TableHead>
+                              <TableHead className="text-xs">Початок</TableHead>
+                              <TableHead className="text-xs">Тривалість</TableHead>
+                              <TableHead className="text-xs">Статус</TableHead>
+                              <TableHead className="text-xs text-right">Оброблено</TableHead>
+                              <TableHead className="text-xs text-right">Нових</TableHead>
+                              <TableHead className="text-xs text-right">Змінених</TableHead>
+                              <TableHead className="text-xs">Помилка</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(chunks as Record<string, unknown>[]).map((chunk, ci) => {
+                              const cStart = chunk.startedAt ? new Date(chunk.startedAt as string) : null;
+                              const cEnd = chunk.completedAt ? new Date(chunk.completedAt as string) : null;
+                              const cDurMs = cStart && cEnd ? cEnd.getTime() - cStart.getTime() : null;
+                              const cDurStr = cDurMs != null
+                                ? cDurMs < 60000 ? `${Math.round(cDurMs / 1000)}с` : `${Math.floor(cDurMs / 60000)}хв ${Math.round((cDurMs % 60000) / 1000)}с`
+                                : chunk.status === "running" ? "..." : "—";
+                              return (
+                                <TableRow key={String(chunk.id ?? ci)} className="hover:bg-muted/30">
+                                  <TableCell className="pl-10 text-xs text-muted-foreground">{Number(chunk.chunkIndex) || ci + 1}</TableCell>
+                                  <TableCell className="text-xs font-medium">
+                                    {chunk.dateFrom && chunk.dateTo ? `${chunk.dateFrom} — ${chunk.dateTo}` : "—"}
+                                  </TableCell>
+                                  <TableCell className="text-xs whitespace-nowrap">
+                                    {cStart ? cStart.toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
+                                  </TableCell>
+                                  <TableCell className="text-xs font-mono text-muted-foreground">{cDurStr}</TableCell>
+                                  <TableCell>
+                                    <Badge
+                                      variant={chunk.status === "completed" ? "default" : chunk.status === "failed" ? "destructive" : chunk.status === "cancelled" ? "outline" : "secondary"}
+                                      className={`text-[10px] ${chunk.status === "cancelled" ? "border-orange-500 text-orange-500" : ""}`}
+                                    >
+                                      {chunk.status === "completed" ? <><CheckCircle2 className="h-3 w-3 mr-1" /> Успішно</> :
+                                       chunk.status === "failed" ? <><XCircle className="h-3 w-3 mr-1" /> Помилка</> :
+                                       chunk.status === "cancelled" ? <><StopCircle className="h-3 w-3 mr-1" /> Скасовано</> :
+                                       <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> В процесі</>}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-xs text-right font-mono">{Number(chunk.ordersProcessed) || 0}</TableCell>
+                                  <TableCell className="text-xs text-right font-mono text-green-500">{Number(chunk.newOrders) || 0}</TableCell>
+                                  <TableCell className="text-xs text-right font-mono text-yellow-500">{Number(chunk.modifiedOrders) || 0}</TableCell>
+                                  <TableCell className="text-xs text-muted-foreground truncate max-w-[160px]" title={String(chunk.errorMessage || "")}>
+                                    {String(chunk.errorMessage || "—")}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    {isExpanded && chunks.length === 0 && (
+                      <div className="px-10 py-3 text-xs text-muted-foreground border-t">Чанки ще виконуються...</div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Legacy sync logs (no runId) */}
+              {syncRunsData.legacy.length > 0 && (
+                <>
+                  {syncRunsData.runs.length > 0 && (
+                    <p className="text-xs text-muted-foreground pt-2 pb-1">Старі записи (до групування):</p>
+                  )}
+                  {(syncRunsData.legacy as Record<string, unknown>[]).map((log) => {
+                    const startedAt = log.startedAt ? new Date(log.startedAt as string) : null;
+                    const completedAt = log.completedAt ? new Date(log.completedAt as string) : null;
+                    const durationMs = startedAt && completedAt ? completedAt.getTime() - startedAt.getTime() : null;
+                    const durationStr = durationMs != null
+                      ? durationMs < 60000 ? `${Math.round(durationMs / 1000)}с` : `${Math.floor(durationMs / 60000)}хв ${Math.round((durationMs % 60000) / 1000)}с`
+                      : log.status === "running" ? "..." : "—";
+                    const statusColor = log.status === "completed" ? "text-green-500" : log.status === "failed" ? "text-red-500" : log.status === "cancelled" ? "text-orange-500" : "text-blue-500";
+                    return (
+                      <div key={String(log.id)} className="border rounded-lg px-4 py-3 flex items-center gap-3 opacity-70">
+                        <span className={`flex-shrink-0 ${statusColor}`}>
+                          {log.status === "completed" ? <CheckCircle2 className="h-4 w-4" /> :
+                           log.status === "failed" ? <XCircle className="h-4 w-4" /> :
+                           log.status === "cancelled" ? <StopCircle className="h-4 w-4" /> :
+                           <Loader2 className="h-4 w-4 animate-spin" />}
+                        </span>
+                        <span className="text-sm flex-1">
+                          {log.dateFrom && log.dateTo ? `${log.dateFrom} — ${log.dateTo}` : "—"}
+                        </span>
                         <Badge variant="outline" className="text-[10px] gap-1">
-                          {log.syncType === "auto" ? (
-                            <><Bot className="h-3 w-3" /> Авто</>
-                          ) : (
-                            <><User className="h-3 w-3" /> Ручна</>
-                          )}
+                          {log.syncType === "auto" ? <><Bot className="h-3 w-3" /> Авто</> : <><User className="h-3 w-3" /> Ручна</>}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs whitespace-nowrap font-medium">
-                        {log.dateFrom && log.dateTo ? (
-                          <span className="text-primary">
-                            {log.dateFrom as string} — {log.dateTo as string}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">
-                        {startedAt ? startedAt.toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
-                      </TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">
-                        {completedAt ? completedAt.toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
-                      </TableCell>
-                      <TableCell className="text-xs font-mono text-muted-foreground">{durationStr}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            log.status === "completed" ? "default" :
-                            log.status === "failed" ? "destructive" :
-                            log.status === "cancelled" ? "outline" : "secondary"
-                          }
-                          className={`text-[10px] ${
-                            log.status === "cancelled" ? "border-orange-500 text-orange-500" : ""
-                          }`}
-                        >
-                          {log.status === "completed" ? (
-                            <><CheckCircle2 className="h-3 w-3 mr-1" /> Успішно</>
-                          ) : log.status === "failed" ? (
-                            <><XCircle className="h-3 w-3 mr-1" /> Помилка</>
-                          ) : log.status === "cancelled" ? (
-                            <><StopCircle className="h-3 w-3 mr-1" /> Скасовано</>
-                          ) : (
-                            <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> В процесі</>
-                          )}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-right font-mono">{String(log.ordersProcessed || 0)}</TableCell>
-                      <TableCell className="text-xs text-right font-mono text-green-500">{String(log.newOrders || 0)}</TableCell>
-                      <TableCell className="text-xs text-right font-mono text-yellow-500">{String(log.modifiedOrders || 0)}</TableCell>
-                      <TableCell className="text-xs text-right font-mono text-red-500">{String(log.deletedOrders || 0)}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground truncate max-w-[180px]" title={String(log.errorMessage || "")}>
-                        {String(log.errorMessage || "—")}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
+                        <span className="text-xs text-muted-foreground">{Number(log.ordersProcessed) || 0} зам.</span>
+                        <span className="text-xs font-mono text-muted-foreground">{durationStr}</span>
+                        <span className="text-xs text-muted-foreground hidden md:block">
+                          {startedAt ? startedAt.toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </>
               )}
-            </TableBody>
-          </Table>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

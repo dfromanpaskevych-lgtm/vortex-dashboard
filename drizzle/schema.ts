@@ -110,10 +110,34 @@ export const changeLogs = mysqlTable("change_logs", {
 
 export type ChangeLog = typeof changeLogs.$inferSelect;
 
-// Sync log
+// Sync run (parent record grouping multiple chunks)
+export const syncRuns = mysqlTable("sync_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  runId: varchar("runId", { length: 64 }).notNull().unique(),
+  status: mysqlEnum("status", ["running", "completed", "failed", "cancelled"]).notNull().default("running"),
+  syncType: mysqlEnum("syncType", ["manual", "auto"]).default("manual").notNull(),
+  dateFrom: varchar("dateFrom", { length: 10 }),  // YYYY-MM-DD (full range)
+  dateTo: varchar("dateTo", { length: 10 }),      // YYYY-MM-DD (full range)
+  totalChunks: int("totalChunks").default(0),
+  completedChunks: int("completedChunks").default(0),
+  failedChunks: int("failedChunks").default(0),
+  cancelledChunks: int("cancelledChunks").default(0),
+  ordersProcessed: int("ordersProcessed").default(0),
+  itemsProcessed: int("itemsProcessed").default(0),
+  newOrders: int("newOrders").default(0),
+  modifiedOrders: int("modifiedOrders").default(0),
+  deletedOrders: int("deletedOrders").default(0),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+});
+
+export type SyncRun = typeof syncRuns.$inferSelect;
+
+// Sync log (individual chunk within a run)
 export const syncLogs = mysqlTable("sync_logs", {
   id: int("id").autoincrement().primaryKey(),
   batchId: varchar("batchId", { length: 64 }).notNull().unique(),
+  runId: varchar("runId", { length: 64 }),  // FK to sync_runs.runId (null for legacy)
   status: mysqlEnum("status", ["running", "completed", "failed", "cancelled"]).notNull(),
   syncType: mysqlEnum("syncType", ["manual", "auto"]).default("manual").notNull(),
   ordersProcessed: int("ordersProcessed").default(0),
@@ -124,6 +148,7 @@ export const syncLogs = mysqlTable("sync_logs", {
   errorMessage: text("errorMessage"),
   dateFrom: varchar("dateFrom", { length: 10 }),  // YYYY-MM-DD
   dateTo: varchar("dateTo", { length: 10 }),      // YYYY-MM-DD
+  chunkIndex: int("chunkIndex"),  // 1-based index within the run
   startedAt: timestamp("startedAt").defaultNow().notNull(),
   completedAt: timestamp("completedAt"),
 });

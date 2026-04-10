@@ -3,7 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
-import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList, getLogisticsList } from "./db";
+import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList, getLogisticsList, getSyncRunsList, getLegacySyncLogs } from "./db";
 import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./apiAuth";
 import { createWebhook, listWebhooks, updateWebhook, deleteWebhook, type WebhookEvent } from "./webhookService";
 import { syncOrders, syncOrdersChunked, getSyncStatus, startScheduledSync, getNextScheduledSyncTime, enrichBalances, getIsEnrichingBalances, cancelSync, isCancelPending } from "./syncService";
@@ -138,6 +138,12 @@ export const appRouter = router({
 
     logs: publicProcedure.query(async () => {
       return getSyncLogsList();
+    }),
+
+    runs: publicProcedure.query(async () => {
+      const runs = await getSyncRunsList(30);
+      const legacy = await getLegacySyncLogs(20);
+      return { runs, legacy };
     }),
 
     enrichBalances: publicProcedure

@@ -174,3 +174,4 @@
 - [x] BUG FIX: Date picker closes on first click — add "Застосувати" button instead of auto-close
 - [x] BUG FIX: Custom date range sends wrong dates to sync — fix dateFrom/dateTo propagation
 - [x] BUG FIX: Cancel sync doesn't work — isSyncing lock at chunked level
+- [x] Групування синхронізацій по batch run: sync_runs таблиця, parent runId, розгортання чанків в UI
