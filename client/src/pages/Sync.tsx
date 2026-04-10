@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import {
   RefreshCw, CheckCircle2, XCircle, Loader2, Clock, Database,
-  CalendarDays, ChevronDown, Coins, Bot, User, StopCircle
+  CalendarDays, ChevronDown, Coins, Bot, User, StopCircle, Check
 } from "lucide-react";
 import { toast } from "sonner";
 import type { DateRange } from "react-day-picker";
@@ -174,15 +174,22 @@ export default function Sync() {
     setCustomRange(undefined);
   };
 
+  // BUG FIX #1: Don't auto-close popover on range select.
+  // Let user pick both dates freely, then click "Застосувати" to confirm.
   const handleCustomRange = (range: DateRange | undefined) => {
     setCustomRange(range);
     if (range?.from) {
       setSelectedPreset(null);
       setSelectedSpecial(null);
     }
-    if (range?.from && range?.to) {
-      setCalendarOpen(false);
-    }
+  };
+
+  const handleApplyCustomRange = () => {
+    setCalendarOpen(false);
+  };
+
+  const handleClearCustomRange = () => {
+    setCustomRange(undefined);
   };
 
   const isSyncing = syncStatus?.isSyncing || triggerSync.isPending;
@@ -193,7 +200,7 @@ export default function Sync() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Синхронізація</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Управління синхронізацією даних з Vortex ERP API. Дані завантажуються по 1 дню за раз з паузами між запитами.
+          Управління синхронізацією даних з Vortex ERP API. Дані завантажуються по 1 дню за раз.
         </p>
       </div>
 
@@ -257,7 +264,7 @@ export default function Sync() {
                   <span className="text-sm text-muted-foreground flex items-center gap-1">
                     <Bot className="h-3 w-3" /> Авто-синхр.:
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs">
                     {new Date(syncStatus.nextScheduledSync).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
@@ -322,7 +329,7 @@ export default function Sync() {
               </div>
             </div>
 
-            {/* Custom date range */}
+            {/* Custom date range — BUG FIX #1: no auto-close, explicit "Apply" button */}
             <div>
               <p className="text-xs text-muted-foreground mb-2 font-medium">Або власний діапазон:</p>
               <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
@@ -352,11 +359,40 @@ export default function Sync() {
                     numberOfMonths={2}
                     disabled={(date) => date > new Date()}
                   />
-                  {customRange?.from && !customRange?.to && (
-                    <p className="text-xs text-muted-foreground text-center pb-3">
-                      Оберіть дату закінчення
-                    </p>
-                  )}
+                  <div className="flex items-center justify-between p-3 border-t">
+                    <div className="text-xs text-muted-foreground">
+                      {customRange?.from && customRange?.to ? (
+                        <span className="text-green-500 font-medium">
+                          {formatDateUk(customRange.from)} — {formatDateUk(customRange.to)}
+                        </span>
+                      ) : customRange?.from ? (
+                        <span className="text-yellow-500">Оберіть дату закінчення</span>
+                      ) : (
+                        <span>Оберіть дату початку</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      {customRange?.from && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7"
+                          onClick={handleClearCustomRange}
+                        >
+                          Очистити
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={handleApplyCustomRange}
+                        disabled={!customRange?.from || !customRange?.to}
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        Застосувати
+                      </Button>
+                    </div>
+                  </div>
                 </PopoverContent>
               </Popover>
             </div>

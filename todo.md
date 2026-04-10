@@ -171,3 +171,6 @@
 - [x] 69 tests passing, TypeScript 0 errors
 - [x] Deploy all above changes — https://vortex-ai.manus.space
 - [x] Збільшити page_size get_rg_list з 50 до 1000 (підтверджено Vortex)
+- [x] BUG FIX: Date picker closes on first click — add "Застосувати" button instead of auto-close
+- [x] BUG FIX: Custom date range sends wrong dates to sync — fix dateFrom/dateTo propagation
+- [x] BUG FIX: Cancel sync doesn't work — isSyncing lock at chunked level

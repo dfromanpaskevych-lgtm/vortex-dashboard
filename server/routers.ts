@@ -109,23 +109,30 @@ export const appRouter = router({
         dateTo: z.number().optional(),   // Unix timestamp (seconds)
       }).optional())
       .mutation(async ({ input }) => {
-        const days = input?.days || 3;
+        const days = input?.days ?? 3;
         const dateFrom = input?.dateFrom;
         const dateTo = input?.dateTo;
 
-        // Calculate total days to decide chunking
+        // BUG FIX #2: Use explicit undefined check, not falsy check
+        // dateFrom/dateTo are Unix timestamps and should be passed directly
+        const hasExplicitRange = dateFrom !== undefined && dateTo !== undefined;
+
         let totalDays = days;
-        if (dateFrom && dateTo) {
-          totalDays = Math.ceil((dateTo - dateFrom) / (60 * 60 * 24));
+        if (hasExplicitRange) {
+          totalDays = Math.max(1, Math.ceil((dateTo! - dateFrom!) / (60 * 60 * 24)));
         }
 
-        // Use chunked sync for all requests — each chunk gets its own log entry
-        syncOrdersChunked(days, dateFrom, dateTo, "manual");
+        // Use chunked sync — pass explicit dates when provided
+        if (hasExplicitRange) {
+          syncOrdersChunked(0, dateFrom, dateTo, "manual");
+        } else {
+          syncOrdersChunked(days, undefined, undefined, "manual");
+        }
 
-        const label = dateFrom && dateTo
-          ? `${new Date(dateFrom * 1000).toLocaleDateString("uk-UA")} — ${new Date(dateTo * 1000).toLocaleDateString("uk-UA")}`
+        const label = hasExplicitRange
+          ? `${new Date(dateFrom! * 1000).toLocaleDateString("uk-UA")} — ${new Date(dateTo! * 1000).toLocaleDateString("uk-UA")}`
           : `останні ${days} дні`;
-        const chunkCount = Math.ceil(totalDays / 7);
+        const chunkCount = Math.max(1, Math.ceil(totalDays / 7));
         return { started: true, message: `Синхронізацію запущено: ${label} (${chunkCount} ${chunkCount === 1 ? "чанк" : "чанків"} по 7 днів)` };
       }),
 

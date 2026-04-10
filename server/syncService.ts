@@ -410,22 +410,20 @@ async function fixAdminManagers(
  *   - dateFrom / dateTo: explicit Unix timestamps (seconds)
  * Fetches day-by-day with pauses to avoid overloading the Vortex API.
  */
-export async function syncOrders(
+/**
+ * Internal sync function for a single chunk.
+ * Does NOT manage isSyncing lock — that's handled by syncOrdersChunked.
+ */
+async function syncOrdersInternal(
   days = 3,
   dateFrom?: number,
   dateTo?: number,
   syncType: "manual" | "auto" = "manual"
 ): Promise<{ batchId: string; success: boolean; message: string }> {
-  if (isSyncing) {
-    return { batchId: "", success: false, message: "Sync already in progress" };
-  }
-
-  isSyncing = true;
   const batchId = nanoid();
   const db = await getDb();
 
   if (!db) {
-    isSyncing = false;
     return { batchId, success: false, message: "Database not available" };
   }
 
@@ -433,7 +431,7 @@ export async function syncOrders(
     let startDate: Date;
     let endDate: Date;
 
-    if (dateFrom && dateTo) {
+    if (dateFrom !== undefined && dateTo !== undefined) {
       // Custom range from explicit timestamps
       startDate = new Date(dateFrom * 1000);
       endDate = new Date(dateTo * 1000);
@@ -736,7 +734,6 @@ export async function syncOrders(
       });
     }
 
-    isSyncing = false;
     return { batchId, success: true, message: msg };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
@@ -751,8 +748,27 @@ export async function syncOrders(
       })
       .where(eq(syncLogs.batchId, batchId));
 
-    isSyncing = false;
     return { batchId, success: false, message: errMsg };
+  }
+}
+
+/**
+ * Public wrapper: sync with isSyncing lock (for standalone calls, not used by chunked sync).
+ */
+export async function syncOrders(
+  days = 3,
+  dateFrom?: number,
+  dateTo?: number,
+  syncType: "manual" | "auto" = "manual"
+): Promise<{ batchId: string; success: boolean; message: string }> {
+  if (isSyncing) {
+    return { batchId: "", success: false, message: "Sync already in progress" };
+  }
+  isSyncing = true;
+  try {
+    return await syncOrdersInternal(days, dateFrom, dateTo, syncType);
+  } finally {
+    isSyncing = false;
   }
 }
 
@@ -965,7 +981,7 @@ async function syncChunkWithRetry(
 
   let result: { batchId: string; success: boolean; message: string };
   try {
-    result = await syncOrders(0, fromTs, toTs, syncType);
+    result = await syncOrdersInternal(0, fromTs, toTs, syncType);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     result = { batchId: `err-${nanoid(6)}`, success: false, message: errMsg };
@@ -1013,11 +1029,31 @@ export async function syncOrdersChunked(
   dateTo?: number,
   syncType: "manual" | "auto" = "manual"
 ): Promise<{ success: boolean; message: string; chunks: number; results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> }> {
+  // BUG FIX #3: isSyncing lock at chunked level (not per-chunk)
+  if (isSyncing) {
+    return { success: false, message: "Sync already in progress", chunks: 0, results: [] };
+  }
+  isSyncing = true;
+
+  try {
+    return await _syncOrdersChunkedInner(days, dateFrom, dateTo, syncType);
+  } finally {
+    isSyncing = false;
+    cancelRequested = false;
+  }
+}
+
+async function _syncOrdersChunkedInner(
+  days: number,
+  dateFrom: number | undefined,
+  dateTo: number | undefined,
+  syncType: "manual" | "auto"
+): Promise<{ success: boolean; message: string; chunks: number; results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> }> {
   // Calculate full date range
   let startDate: Date;
   let endDate: Date;
 
-  if (dateFrom && dateTo) {
+  if (dateFrom !== undefined && dateTo !== undefined) {
     startDate = new Date(dateFrom * 1000);
     endDate = new Date(dateTo * 1000);
   } else {
