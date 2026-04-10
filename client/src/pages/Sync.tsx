@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import {
   RefreshCw, CheckCircle2, XCircle, Loader2, Clock, Database,
-  CalendarDays, ChevronDown, Coins, Bot, User, StopCircle, Check
+  CalendarDays, ChevronDown, Coins, Bot, User, StopCircle, Check, RotateCcw
 } from "lucide-react";
 import { toast } from "sonner";
 import type { DateRange } from "react-day-picker";
@@ -126,6 +126,32 @@ export default function Sync() {
     refetchInterval: 2000,
   });
   const isCancelPending = cancelPendingData?.isCancelPending ?? false;
+
+  const cancelChunkMutation = trpc.sync.cancelChunk.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.info("Чанк зупиняється...");
+      } else {
+        toast.warning(data.message || "Не вдалось зупинити чанк");
+      }
+      utils.sync.runs.invalidate();
+      utils.sync.status.invalidate();
+    },
+    onError: (err: { message: string }) => toast.error("Помилка: " + err.message),
+  });
+
+  const retryChunkMutation = trpc.sync.retryChunk.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success("Чанк перезапущено");
+      } else {
+        toast.warning(data.message || "Не вдалось перезапустити чанк");
+      }
+      utils.sync.runs.invalidate();
+      utils.sync.status.invalidate();
+    },
+    onError: (err: { message: string }) => toast.error("Помилка: " + err.message),
+  });
 
   const triggerEnrichBalances = trpc.sync.enrichBalances.useMutation({
     onSuccess: (data) => {
@@ -584,6 +610,7 @@ export default function Sync() {
                               <TableHead className="text-xs text-right">Нових</TableHead>
                               <TableHead className="text-xs text-right">Змінених</TableHead>
                               <TableHead className="text-xs">Помилка</TableHead>
+                              <TableHead className="text-xs">Дії</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -620,6 +647,33 @@ export default function Sync() {
                                   <TableCell className="text-xs text-right font-mono text-yellow-500">{Number(chunk.modifiedOrders) || 0}</TableCell>
                                   <TableCell className="text-xs text-muted-foreground truncate max-w-[160px]" title={String(chunk.errorMessage || "")}>
                                     {String(chunk.errorMessage || "—")}
+                                    {Boolean(chunk.autoRetried) && <span className="ml-1 text-yellow-500 text-[10px]">(auto-retry)</span>}
+                                  </TableCell>
+                                  <TableCell className="text-xs">
+                                    {chunk.status === "running" && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2 text-[10px] text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
+                                        onClick={() => cancelChunkMutation.mutate({ batchId: String(chunk.batchId) })}
+                                        disabled={cancelChunkMutation.isPending}
+                                      >
+                                        <StopCircle className="h-3 w-3 mr-1" />
+                                        Зупинити
+                                      </Button>
+                                    )}
+                                    {(chunk.status === "failed" || chunk.status === "cancelled") && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2 text-[10px] text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
+                                        onClick={() => retryChunkMutation.mutate({ batchId: String(chunk.batchId) })}
+                                        disabled={retryChunkMutation.isPending || isSyncing}
+                                      >
+                                        <RotateCcw className="h-3 w-3 mr-1" />
+                                        Перезапустити
+                                      </Button>
+                                    )}
                                   </TableCell>
                                 </TableRow>
                               );

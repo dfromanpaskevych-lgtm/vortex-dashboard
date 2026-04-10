@@ -420,7 +420,8 @@ async function syncOrdersInternal(
   dateTo?: number,
   syncType: "manual" | "auto" = "manual",
   runId?: string,
-  chunkIndex?: number
+  chunkIndex?: number,
+  autoRetried = false
 ): Promise<{ batchId: string; success: boolean; message: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number }> {
   const batchId = nanoid();
   const db = await getDb();
@@ -465,6 +466,7 @@ async function syncOrdersInternal(
       deletedOrders: 0,
       dateFrom: dateFromStr,
       dateTo: dateToStr,
+      autoRetried,
       startedAt,
     });
 
@@ -982,7 +984,8 @@ async function syncChunkWithRetry(
   syncType: "manual" | "auto",
   depth = 0,
   runId?: string,
-  chunkIndex?: number
+  chunkIndex?: number,
+  wasAutoRetried = false
 ): Promise<Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number }>> {
   const fromTs = Math.floor(from.getTime() / 1000);
   const toTs = Math.floor(to.getTime() / 1000);
@@ -991,11 +994,11 @@ async function syncChunkWithRetry(
   const totalDays = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   const indent = "  ".repeat(depth);
 
-  console.log(`${indent}[ChunkRetry] Trying ${fromStr} — ${toStr} (${totalDays} days, depth=${depth})`);
+  console.log(`${indent}[ChunkRetry] Trying ${fromStr} — ${toStr} (${totalDays} days, depth=${depth}, autoRetried=${wasAutoRetried})`);
 
   let result: { batchId: string; success: boolean; message: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number };
   try {
-    result = await syncOrdersInternal(0, fromTs, toTs, syncType, runId, chunkIndex);
+    result = await syncOrdersInternal(0, fromTs, toTs, syncType, runId, chunkIndex, wasAutoRetried);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     result = { batchId: `err-${nanoid(6)}`, success: false, message: errMsg };
@@ -1004,6 +1007,13 @@ async function syncChunkWithRetry(
   if (result.success) {
     console.log(`${indent}[ChunkRetry] ✅ Success: ${fromStr} — ${toStr}`);
     return [{ batchId: result.batchId, success: true, dateFrom: fromStr, dateTo: toStr, ordersProcessed: result.ordersProcessed, itemsProcessed: result.itemsProcessed, newOrders: result.newOrders, modifiedOrders: result.modifiedOrders }];
+  }
+
+  // Failed at depth=0 and not yet auto-retried: do ONE automatic retry
+  if (depth === 0 && !wasAutoRetried) {
+    console.warn(`${indent}[ChunkRetry] ⚠️ Auto-retrying once: ${fromStr} — ${toStr}`);
+    await new Promise(r => setTimeout(r, 3000)); // 3s pause before auto-retry
+    return syncChunkWithRetry(from, to, syncType, depth, runId, chunkIndex, true);
   }
 
   // Failed — can we split further?
@@ -1055,6 +1065,105 @@ export async function syncOrdersChunked(
     isSyncing = false;
     cancelRequested = false;
   }
+}
+
+/**
+ * Cancel a specific running chunk by batchId.
+ * Marks the chunk as cancelled in DB and sets the global cancelRequested flag
+ * so the parent run also stops after this chunk.
+ */
+export async function cancelChunk(batchId: string): Promise<{ success: boolean; message: string }> {
+  const db = await getDb();
+  if (!db) return { success: false, message: "Database not available" };
+
+  const { eq } = await import("drizzle-orm");
+  const [chunk] = await db.select().from(syncLogs).where(eq(syncLogs.batchId, batchId)).limit(1);
+  if (!chunk) return { success: false, message: "Chunk not found" };
+  if (chunk.status !== "running") return { success: false, message: `Chunk is not running (status: ${chunk.status})` };
+
+  // Mark chunk as cancelled
+  await db.update(syncLogs).set({
+    status: "cancelled",
+    errorMessage: "Cancelled by user",
+    completedAt: new Date(),
+  }).where(eq(syncLogs.batchId, batchId));
+
+  // Also request global cancel so parent run stops
+  cancelRequested = true;
+
+  console.log(`[Sync] Chunk ${batchId} cancelled by user`);
+  return { success: true, message: "Chunk cancelled. Parent run will stop after current chunk." };
+}
+
+/**
+ * Retry a specific failed or cancelled chunk by batchId.
+ * Creates a new sync run for just this chunk's date range.
+ * Can be called even when no sync is currently running.
+ */
+export async function retryChunk(batchId: string): Promise<{ success: boolean; message: string; newBatchId?: string }> {
+  const db = await getDb();
+  if (!db) return { success: false, message: "Database not available" };
+
+  const { eq } = await import("drizzle-orm");
+  const [chunk] = await db.select().from(syncLogs).where(eq(syncLogs.batchId, batchId)).limit(1);
+  if (!chunk) return { success: false, message: "Chunk not found" };
+  if (chunk.status !== "failed" && chunk.status !== "cancelled") {
+    return { success: false, message: `Can only retry failed or cancelled chunks (status: ${chunk.status})` };
+  }
+  if (!chunk.dateFrom || !chunk.dateTo) {
+    return { success: false, message: "Chunk has no date range to retry" };
+  }
+
+  if (isSyncing) {
+    return { success: false, message: "Another sync is already running. Please wait." };
+  }
+
+  const fromDate = new Date(chunk.dateFrom + "T00:00:00.000Z");
+  const toDate = new Date(chunk.dateTo + "T23:59:59.999Z");
+  const fromTs = Math.floor(fromDate.getTime() / 1000);
+  const toTs = Math.floor(toDate.getTime() / 1000);
+
+  console.log(`[Sync] Manual retry of chunk ${batchId}: ${chunk.dateFrom} — ${chunk.dateTo}`);
+
+  // Run in background (fire-and-forget), using the same runId if available
+  isSyncing = true;
+  cancelRequested = false;
+  (async () => {
+    try {
+      await syncOrdersInternal(0, fromTs, toTs, chunk.syncType ?? "manual", chunk.runId ?? undefined, chunk.chunkIndex ?? undefined, false);
+      // Update parent run stats if runId exists
+      if (chunk.runId) {
+        const dbUpdate = await getDb();
+        if (dbUpdate) {
+          const allChunks = await dbUpdate.select().from(syncLogs).where(eq(syncLogs.runId, chunk.runId));
+          const completedChunks = allChunks.filter(c => c.status === "completed").length;
+          const failedChunks = allChunks.filter(c => c.status === "failed").length;
+          const cancelledChunks = allChunks.filter(c => c.status === "cancelled").length;
+          const totalOrders = allChunks.reduce((s, c) => s + (c.ordersProcessed ?? 0), 0);
+          const totalNew = allChunks.reduce((s, c) => s + (c.newOrders ?? 0), 0);
+          const totalMod = allChunks.reduce((s, c) => s + (c.modifiedOrders ?? 0), 0);
+          const allDone = allChunks.every(c => c.status !== "running");
+          const finalStatus = failedChunks > 0 ? "failed" : cancelledChunks > 0 ? "cancelled" : "completed";
+          await dbUpdate.update(syncRuns).set({
+            completedChunks,
+            failedChunks,
+            cancelledChunks,
+            ordersProcessed: totalOrders,
+            newOrders: totalNew,
+            modifiedOrders: totalMod,
+            ...(allDone ? { status: finalStatus, completedAt: new Date() } : {}),
+          }).where(eq(syncRuns.runId, chunk.runId));
+        }
+      }
+    } catch (err) {
+      console.error(`[Sync] Retry chunk ${batchId} failed:`, err);
+    } finally {
+      isSyncing = false;
+      cancelRequested = false;
+    }
+  })();
+
+  return { success: true, message: `Retry started for ${chunk.dateFrom} — ${chunk.dateTo}` };
 }
 
 async function _syncOrdersChunkedInner(

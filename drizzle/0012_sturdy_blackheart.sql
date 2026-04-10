@@ -1,0 +1,1 @@
+ALTER TABLE `sync_logs` ADD `autoRetried` boolean DEFAULT false NOT NULL;

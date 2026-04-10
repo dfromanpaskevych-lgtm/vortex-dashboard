@@ -175,3 +175,5 @@
 - [x] BUG FIX: Custom date range sends wrong dates to sync — fix dateFrom/dateTo propagation
 - [x] BUG FIX: Cancel sync doesn't work — isSyncing lock at chunked level
 - [x] Групування синхронізацій по batch run: sync_runs таблиця, parent runId, розгортання чанків в UI
+- [x] Управління чанками: кнопки Stop/Retry для running/failed/cancelled чанків
+- [x] Авторестарт чанку 1 раз при помилці (autoRetried поле в sync_logs)

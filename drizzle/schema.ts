@@ -149,6 +149,7 @@ export const syncLogs = mysqlTable("sync_logs", {
   dateFrom: varchar("dateFrom", { length: 10 }),  // YYYY-MM-DD
   dateTo: varchar("dateTo", { length: 10 }),      // YYYY-MM-DD
   chunkIndex: int("chunkIndex"),  // 1-based index within the run
+  autoRetried: boolean("autoRetried").default(false).notNull(),  // true if this chunk was auto-retried once
   startedAt: timestamp("startedAt").defaultNow().notNull(),
   completedAt: timestamp("completedAt"),
 });

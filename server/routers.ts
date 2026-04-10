@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getOrdersList, getDashboardMetrics, getChangeLogs, getFilterOptions, getSyncLogsList, getLogisticsList, getSyncRunsList, getLegacySyncLogs } from "./db";
 import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./apiAuth";
 import { createWebhook, listWebhooks, updateWebhook, deleteWebhook, type WebhookEvent } from "./webhookService";
-import { syncOrders, syncOrdersChunked, getSyncStatus, startScheduledSync, getNextScheduledSyncTime, enrichBalances, getIsEnrichingBalances, cancelSync, isCancelPending } from "./syncService";
+import { syncOrders, syncOrdersChunked, getSyncStatus, startScheduledSync, getNextScheduledSyncTime, enrichBalances, getIsEnrichingBalances, cancelSync, isCancelPending, cancelChunk, retryChunk } from "./syncService";
 
 // Auto-sync: daily at 00:00 Kyiv time, last 7 days
 startScheduledSync();
@@ -166,6 +166,18 @@ export const appRouter = router({
     cancelPending: publicProcedure.query(() => {
       return { isCancelPending: isCancelPending() };
     }),
+
+    cancelChunk: protectedProcedure
+      .input(z.object({ batchId: z.string() }))
+      .mutation(async ({ input }) => {
+        return cancelChunk(input.batchId);
+      }),
+
+    retryChunk: protectedProcedure
+      .input(z.object({ batchId: z.string() }))
+      .mutation(async ({ input }) => {
+        return retryChunk(input.batchId);
+      }),
   }),
 
   // ============ API KEY MANAGEMENT ============
