@@ -1136,13 +1136,25 @@ export async function retryChunk(batchId: string): Promise<{ success: boolean; m
         const dbUpdate = await getDb();
         if (dbUpdate) {
           const allChunks = await dbUpdate.select().from(syncLogs).where(eq(syncLogs.runId, chunk.runId));
-          const completedChunks = allChunks.filter(c => c.status === "completed").length;
-          const failedChunks = allChunks.filter(c => c.status === "failed").length;
-          const cancelledChunks = allChunks.filter(c => c.status === "cancelled").length;
-          const totalOrders = allChunks.reduce((s, c) => s + (c.ordersProcessed ?? 0), 0);
-          const totalNew = allChunks.reduce((s, c) => s + (c.newOrders ?? 0), 0);
-          const totalMod = allChunks.reduce((s, c) => s + (c.modifiedOrders ?? 0), 0);
-          const allDone = allChunks.every(c => c.status !== "running");
+          // For status: use only the LATEST record per chunkIndex (retries replace old failures)
+          const latestByIndex = new Map<number, typeof allChunks[0]>();
+          for (const c of allChunks) {
+            const idx = c.chunkIndex ?? 0;
+            const existing = latestByIndex.get(idx);
+            if (!existing || (c.startedAt && existing.startedAt && new Date(c.startedAt) > new Date(existing.startedAt))) {
+              latestByIndex.set(idx, c);
+            }
+          }
+          const latestChunks = Array.from(latestByIndex.values());
+          const completedChunks = latestChunks.filter(c => c.status === "completed").length;
+          const failedChunks = latestChunks.filter(c => c.status === "failed").length;
+          const cancelledChunks = latestChunks.filter(c => c.status === "cancelled").length;
+          // For stats: sum ALL completed chunks (including retried ones)
+          const completedAll = allChunks.filter(c => c.status === "completed");
+          const totalOrders = completedAll.reduce((s, c) => s + (c.ordersProcessed ?? 0), 0);
+          const totalNew = completedAll.reduce((s, c) => s + (c.newOrders ?? 0), 0);
+          const totalMod = completedAll.reduce((s, c) => s + (c.modifiedOrders ?? 0), 0);
+          const allDone = latestChunks.every(c => c.status !== "running");
           const finalStatus = failedChunks > 0 ? "failed" : cancelledChunks > 0 ? "cancelled" : "completed";
           await dbUpdate.update(syncRuns).set({
             completedChunks,

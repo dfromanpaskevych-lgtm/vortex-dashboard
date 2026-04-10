@@ -537,9 +537,18 @@ export default function Sync() {
                   ? durationMs < 60000 ? `${Math.round(durationMs / 1000)}с` : `${Math.floor(durationMs / 60000)}хв ${Math.round((durationMs % 60000) / 1000)}с`
                   : run.status === "running" ? "..." : "—";
                 const chunks = (run.chunks as unknown[]) ?? [];
-                const totalChunks = Number(run.totalChunks) || chunks.length || 1;
+                // actualChunkCount = unique chunkIndexes actually started (not planned)
+                const actualChunkCount = Number(run.actualChunkCount) || new Set(chunks.map((c) => (c as Record<string, unknown>).chunkIndex ?? 0)).size || chunks.length || 1;
+                const totalChunks = actualChunkCount;
                 const completedChunks = Number(run.completedChunks) || 0;
                 const failedChunks = Number(run.failedChunks) || 0;
+                // Find chunkIndexes that have multiple records (retried)
+                const chunkIndexCounts = new Map<number, number>();
+                for (const c of chunks as Record<string, unknown>[]) {
+                  const idx = Number(c.chunkIndex ?? 0);
+                  chunkIndexCounts.set(idx, (chunkIndexCounts.get(idx) ?? 0) + 1);
+                }
+                const retriedIndexes = new Set(Array.from(chunkIndexCounts.entries()).filter(([, cnt]) => cnt > 1).map(([idx]) => idx));
                 const statusColor = run.status === "completed" ? "text-green-500" : run.status === "failed" ? "text-red-500" : run.status === "cancelled" ? "text-orange-500" : "text-blue-500";
 
                 return (
@@ -621,8 +630,10 @@ export default function Sync() {
                               const cDurStr = cDurMs != null
                                 ? cDurMs < 60000 ? `${Math.round(cDurMs / 1000)}с` : `${Math.floor(cDurMs / 60000)}хв ${Math.round((cDurMs % 60000) / 1000)}с`
                                 : chunk.status === "running" ? "..." : "—";
+                              const chunkIdx = Number(chunk.chunkIndex ?? 0);
+                              const isRetried = retriedIndexes.has(chunkIdx);
                               return (
-                                <TableRow key={String(chunk.id ?? ci)} className="hover:bg-muted/30">
+                                <TableRow key={String(chunk.id ?? ci)} className={`hover:bg-muted/30 ${isRetried ? "bg-yellow-500/5 border-l-2 border-l-yellow-500/40" : ""}`}>
                                   <TableCell className="pl-10 text-xs text-muted-foreground">{Number(chunk.chunkIndex) || ci + 1}</TableCell>
                                   <TableCell className="text-xs font-medium">
                                     {chunk.dateFrom && chunk.dateTo ? `${chunk.dateFrom} — ${chunk.dateTo}` : "—"}

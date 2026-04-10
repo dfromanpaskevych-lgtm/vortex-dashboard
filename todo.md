@@ -177,3 +177,6 @@
 - [x] Групування синхронізацій по batch run: sync_runs таблиця, parent runId, розгортання чанків в UI
 - [x] Управління чанками: кнопки Stop/Retry для running/failed/cancelled чанків
 - [x] Авторестарт чанку 1 раз при помилці (autoRetried поле в sync_logs)
+- [x] FIX: Статус батьківського запуску по фінальному результату (latest per chunkIndex)
+- [x] FIX: Кількість чанків = реально запущені (actualChunkCount), не заплановані
+- [x] FIX: Жовта підсвітка рядків перезапущених чанків (border-l + bg-yellow)

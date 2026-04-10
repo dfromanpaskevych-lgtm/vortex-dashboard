@@ -505,7 +505,7 @@ export async function getSyncRunsList(limit = 30) {
     .where(inArray(syncLogs.runId, runIds))
     .orderBy(syncLogs.chunkIndex);
 
-  // Group chunks by runId
+  // Group chunks by runId, sorted by chunkIndex then startedAt
   const chunksByRun = new Map<string, typeof allChunks>();
   for (const chunk of allChunks) {
     if (!chunk.runId) continue;
@@ -513,10 +513,24 @@ export async function getSyncRunsList(limit = 30) {
     chunksByRun.get(chunk.runId)!.push(chunk);
   }
 
-  return runs.map(run => ({
-    ...run,
-    chunks: chunksByRun.get(run.runId) ?? [],
-  }));
+  return runs.map(run => {
+    const chunks = chunksByRun.get(run.runId) ?? [];
+    // Sort: by chunkIndex asc, then by startedAt asc (retries come after originals)
+    chunks.sort((a, b) => {
+      const idxDiff = (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0);
+      if (idxDiff !== 0) return idxDiff;
+      const aTime = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+      const bTime = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+      return aTime - bTime;
+    });
+    // actualChunkCount = number of unique chunkIndexes that were actually started
+    const uniqueIndexes = new Set(chunks.map(c => c.chunkIndex ?? 0));
+    return {
+      ...run,
+      chunks,
+      actualChunkCount: uniqueIndexes.size,
+    };
+  });
 }
 
 /**
