@@ -105,32 +105,28 @@ export const appRouter = router({
     trigger: publicProcedure
       .input(z.object({
         days: z.number().optional(),
-        dateFrom: z.number().optional(), // Unix timestamp (seconds)
-        dateTo: z.number().optional(),   // Unix timestamp (seconds)
+        dateFrom: z.string().optional(), // YYYY-MM-DD string (timezone-safe)
+        dateTo: z.string().optional(),   // YYYY-MM-DD string (timezone-safe)
       }).optional())
       .mutation(async ({ input }) => {
         const days = input?.days ?? 3;
-        const dateFrom = input?.dateFrom;
-        const dateTo = input?.dateTo;
-
-        // BUG FIX #2: Use explicit undefined check, not falsy check
-        // dateFrom/dateTo are Unix timestamps and should be passed directly
+        const dateFrom = input?.dateFrom; // YYYY-MM-DD or undefined
+        const dateTo = input?.dateTo;     // YYYY-MM-DD or undefined
         const hasExplicitRange = dateFrom !== undefined && dateTo !== undefined;
-
         let totalDays = days;
         if (hasExplicitRange) {
-          totalDays = Math.max(1, Math.ceil((dateTo! - dateFrom!) / (60 * 60 * 24)));
+          const from = new Date(dateFrom! + "T00:00:00.000Z");
+          const to = new Date(dateTo! + "T23:59:59.999Z");
+          totalDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));
         }
-
-        // Use chunked sync — pass explicit dates when provided
+        // Use chunked sync — pass explicit date strings when provided
         if (hasExplicitRange) {
           syncOrdersChunked(0, dateFrom, dateTo, "manual");
         } else {
           syncOrdersChunked(days, undefined, undefined, "manual");
         }
-
         const label = hasExplicitRange
-          ? `${new Date(dateFrom! * 1000).toLocaleDateString("uk-UA")} — ${new Date(dateTo! * 1000).toLocaleDateString("uk-UA")}`
+          ? `${dateFrom} — ${dateTo}`
           : `останні ${days} дні`;
         const chunkCount = Math.max(1, Math.ceil(totalDays / 7));
         return { started: true, message: `Синхронізацію запущено: ${label} (${chunkCount} ${chunkCount === 1 ? "чанк" : "чанків"} по 7 днів)` };

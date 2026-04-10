@@ -416,8 +416,8 @@ async function fixAdminManagers(
  */
 async function syncOrdersInternal(
   days = 3,
-  dateFrom?: number,
-  dateTo?: number,
+  dateFrom?: string, // YYYY-MM-DD (timezone-safe)
+  dateTo?: string,   // YYYY-MM-DD (timezone-safe)
   syncType: "manual" | "auto" = "manual",
   runId?: string,
   chunkIndex?: number,
@@ -435,18 +435,15 @@ async function syncOrdersInternal(
     let endDate: Date;
 
     if (dateFrom !== undefined && dateTo !== undefined) {
-      // Custom range from explicit timestamps
-      startDate = new Date(dateFrom * 1000);
-      endDate = new Date(dateTo * 1000);
+      // Parse as UTC midnight to avoid timezone shifts
+      startDate = new Date(dateFrom + "T00:00:00.000Z");
+      endDate = new Date(dateTo + "T23:59:59.999Z");
     } else {
-      // Last N days
-      endDate = new Date();
-      startDate = new Date();
-      startDate.setDate(startDate.getDate() - (days - 1));
+      // Last N days — use UTC
+      const now = new Date();
+      endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+      startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1), 0, 0, 0, 0));
     }
-
-    startDate.setHours(0, 0, 0, 0);
-    endDate.setHours(23, 59, 59, 999);
 
     const dateFromStr = startDate.toISOString().slice(0, 10);
     const dateToStr = endDate.toISOString().slice(0, 10);
@@ -847,8 +844,8 @@ async function syncOrdersInternal(
  */
 export async function syncOrders(
   days = 3,
-  dateFrom?: number,
-  dateTo?: number,
+  dateFrom?: string, // YYYY-MM-DD
+  dateTo?: string,   // YYYY-MM-DD
   syncType: "manual" | "auto" = "manual"
 ): Promise<{ batchId: string; success: boolean; message: string }> {
   if (isSyncing) {
@@ -892,11 +889,10 @@ export function startScheduledSync() {
       try {
         // Sync entire current month: from 1st of current month (Kyiv time) to today
         const nowKyiv = new Date(Date.now() + 3 * 60 * 60 * 1000); // UTC+3
-        const monthStart = new Date(Date.UTC(nowKyiv.getUTCFullYear(), nowKyiv.getUTCMonth(), 1));
-        const monthStartTs = Math.floor(monthStart.getTime() / 1000);
-        const todayEndTs = Math.floor(Date.now() / 1000);
-        console.log(`[Sync] Auto-sync: current month ${monthStart.toISOString().slice(0, 10)} — today`);
-        await syncOrdersChunked(0, monthStartTs, todayEndTs, "auto"); // sync current month via chunks
+        const monthStartStr = `${nowKyiv.getUTCFullYear()}-${String(nowKyiv.getUTCMonth() + 1).padStart(2, "0")}-01`;
+        const todayStr = nowKyiv.toISOString().slice(0, 10);
+        console.log(`[Sync] Auto-sync: current month ${monthStartStr} — ${todayStr}`);
+        await syncOrdersChunked(0, monthStartStr, todayStr, "auto"); // sync current month via chunks
       } catch (error) {
         console.error("[Sync] Auto sync error:", error);
       }
@@ -1074,7 +1070,7 @@ async function syncChunkWithRetry(
 
   let result: { batchId: string; success: boolean; message: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number };
   try {
-    result = await syncOrdersInternal(0, fromTs, toTs, syncType, runId, chunkIndex, wasAutoRetried);
+    result = await syncOrdersInternal(0, fromStr, toStr, syncType, runId, chunkIndex, wasAutoRetried);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     result = { batchId: `err-${nanoid(6)}`, success: false, message: errMsg };
@@ -1125,8 +1121,8 @@ async function syncChunkWithRetry(
  */
 export async function syncOrdersChunked(
   days = 3,
-  dateFrom?: number,
-  dateTo?: number,
+  dateFrom?: string, // YYYY-MM-DD (timezone-safe)
+  dateTo?: string,   // YYYY-MM-DD (timezone-safe)
   syncType: "manual" | "auto" = "manual"
 ): Promise<{ success: boolean; message: string; chunks: number; results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> }> {
   // BUG FIX #3: isSyncing lock at chunked level (not per-chunk)
@@ -1194,11 +1190,6 @@ export async function retryChunk(batchId: string): Promise<{ success: boolean; m
     return { success: false, message: "Another sync is already running. Please wait." };
   }
 
-  const fromDate = new Date(chunk.dateFrom + "T00:00:00.000Z");
-  const toDate = new Date(chunk.dateTo + "T23:59:59.999Z");
-  const fromTs = Math.floor(fromDate.getTime() / 1000);
-  const toTs = Math.floor(toDate.getTime() / 1000);
-
   console.log(`[Sync] Manual retry of chunk ${batchId}: ${chunk.dateFrom} — ${chunk.dateTo}`);
 
   // Run in background (fire-and-forget), using the same runId if available
@@ -1206,7 +1197,7 @@ export async function retryChunk(batchId: string): Promise<{ success: boolean; m
   cancelRequested = false;
   (async () => {
     try {
-      await syncOrdersInternal(0, fromTs, toTs, chunk.syncType ?? "manual", chunk.runId ?? undefined, chunk.chunkIndex ?? undefined, false);
+      await syncOrdersInternal(0, chunk.dateFrom ?? undefined, chunk.dateTo ?? undefined, chunk.syncType ?? "manual", chunk.runId ?? undefined, chunk.chunkIndex ?? undefined, false);
       // Update parent run stats if runId exists
       if (chunk.runId) {
         const dbUpdate = await getDb();
@@ -1256,8 +1247,8 @@ export async function retryChunk(batchId: string): Promise<{ success: boolean; m
 
 async function _syncOrdersChunkedInner(
   days: number,
-  dateFrom: number | undefined,
-  dateTo: number | undefined,
+  dateFrom: string | undefined, // YYYY-MM-DD
+  dateTo: string | undefined,   // YYYY-MM-DD
   syncType: "manual" | "auto"
 ): Promise<{ success: boolean; message: string; chunks: number; runId: string; results: Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string }> }> {
   // Calculate full date range
@@ -1265,16 +1256,15 @@ async function _syncOrdersChunkedInner(
   let endDate: Date;
 
   if (dateFrom !== undefined && dateTo !== undefined) {
-    startDate = new Date(dateFrom * 1000);
-    endDate = new Date(dateTo * 1000);
+    // Parse as UTC midnight to avoid timezone shifts
+    startDate = new Date(dateFrom + "T00:00:00.000Z");
+    endDate = new Date(dateTo + "T23:59:59.999Z");
   } else {
-    endDate = new Date();
-    startDate = new Date();
-    startDate.setDate(startDate.getDate() - (days - 1));
+    // Last N days — use UTC to be consistent
+    const now = new Date();
+    endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+    startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1), 0, 0, 0, 0));
   }
-
-  startDate.setHours(0, 0, 0, 0);
-  endDate.setHours(23, 59, 59, 999);
 
   // Split into 7-day chunks
   const chunks = splitIntoChunks(startDate, endDate);

@@ -181,3 +181,6 @@
 - [x] FIX: Кількість чанків = реально запущені (actualChunkCount), не заплановані
 - [x] FIX: Жовта підсвітка рядків перезапущених чанків (border-l + bg-yellow)
 - [x] BUG FIX: Скрипт плутає значення між рядками одного артикула — потрібна прив'язка до item_id
+- [x] BUG FIX: Timezone зсув дати (01.01 → 12.31) — передача дат як YYYY-MM-DD strings замість Unix timestamps
+- [x] BUG FIX: Неправильна кількість чанків — UTC-based date parsing усуває зсув
+- [x] BUG FIX: Зависання чанку — UTC-based date parsing, правильний діапазон

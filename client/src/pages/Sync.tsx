@@ -29,24 +29,29 @@ const PRESETS = [
 ] as const;
 
 /** Returns { dateFrom, dateTo } timestamps for the current calendar month (1st → today) */
-function getCurrentMonthRange(): { dateFrom: number; dateTo: number; label: string } {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-  const to = new Date(now);
-  to.setHours(23, 59, 59, 999);
-  const label = from.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
-  return { dateFrom: Math.floor(from.getTime() / 1000), dateTo: Math.floor(to.getTime() / 1000), label };
+/** Helper: format Date as YYYY-MM-DD using local date components (timezone-safe for display) */
+function toDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-/** Returns { dateFrom, dateTo } timestamps for the current quarter (3 months: 1st of 2 months ago → today) */
-function getCurrentQuarterRange(): { dateFrom: number; dateTo: number; label: string } {
+/** Returns { dateFrom, dateTo } as YYYY-MM-DD strings for the current calendar month */
+function getCurrentMonthRange(): { dateFrom: string; dateTo: string; label: string } {
   const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0);
-  const to = new Date(now);
-  to.setHours(23, 59, 59, 999);
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const label = from.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
+  return { dateFrom: toDateStr(from), dateTo: toDateStr(now), label };
+}
+
+/** Returns { dateFrom, dateTo } as YYYY-MM-DD strings for the current quarter */
+function getCurrentQuarterRange(): { dateFrom: string; dateTo: string; label: string } {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
   const fromLabel = from.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
-  const toLabel = to.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
-  return { dateFrom: Math.floor(from.getTime() / 1000), dateTo: Math.floor(to.getTime() / 1000), label: `${fromLabel} — ${toLabel}` };
+  const toLabel = now.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
+  return { dateFrom: toDateStr(from), dateTo: toDateStr(now), label: `${fromLabel} — ${toLabel}` };
 }
 
 function formatDateUk(d: Date): string {
@@ -196,8 +201,9 @@ export default function Sync() {
     } else if (selectedPreset !== null) {
       triggerSync.mutate({ days: selectedPreset });
     } else if (customRange?.from && customRange?.to) {
-      const dateFrom = Math.floor(startOfDay(customRange.from).getTime() / 1000);
-      const dateTo = Math.floor(endOfDay(customRange.to).getTime() / 1000);
+      // Use YYYY-MM-DD strings — timezone-safe, no UTC shift issues
+      const dateFrom = toDateStr(customRange.from);
+      const dateTo = toDateStr(customRange.to);
       triggerSync.mutate({ dateFrom, dateTo });
     }
   };
