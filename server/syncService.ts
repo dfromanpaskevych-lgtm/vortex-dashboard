@@ -660,50 +660,126 @@ async function syncOrdersInternal(
       const rgEntries = await fetchRgByDateRange(startDate, endDate);
       console.log(`[Sync] Got ${rgEntries.length} RG entries, matching to order items...`);
 
-      // Build a lookup: art_id+code+brand -> RG entry
+      // ===== RG ENRICHMENT — FIXED: match by order_item_id when available, otherwise by vortexOrderId + code + brand =====
+      // Step 1: Build a map of all order_items we just synced, keyed by orderItemId for O(1) lookup
+      const syncedOrderIds = new Set<string>();
+      for (const rawOrder of fetchedOrders) {
+        const vid = String(rawOrder.order_id || rawOrder.id || "");
+        if (vid) syncedOrderIds.add(vid);
+      }
+
+      // Step 2: Load all order_items for synced orders into memory for precise matching
+      const allSyncedItems: Array<{ id: number; vortexOrderId: string; orderItemId: string | null; code: string | null; brandName: string | null; supplierName: string | null; qty: number | null }> = [];
+      for (const vid of Array.from(syncedOrderIds)) {
+        const items = await db
+          .select({
+            id: orderItems.id,
+            vortexOrderId: orderItems.vortexOrderId,
+            orderItemId: orderItems.orderItemId,
+            code: orderItems.code,
+            brandName: orderItems.brandName,
+            supplierName: orderItems.supplierName,
+            qty: orderItems.qty,
+          })
+          .from(orderItems)
+          .where(eq(orderItems.vortexOrderId, vid));
+        allSyncedItems.push(...items);
+      }
+
+      // Step 3: Build lookup indexes
+      // Primary: orderItemId -> item (most precise)
+      const byOrderItemId = new Map<string, typeof allSyncedItems[number]>();
+      // Secondary: vortexOrderId:code:brand -> items[] (for RG entries without order_item_id)
+      const byOrderCodeBrand = new Map<string, typeof allSyncedItems>();
+      for (const item of allSyncedItems) {
+        if (item.orderItemId) {
+          byOrderItemId.set(item.orderItemId, item);
+        }
+        const key = `${item.vortexOrderId}:${(item.code || "").toLowerCase()}:${(item.brandName || "").toLowerCase()}`;
+        if (!byOrderCodeBrand.has(key)) byOrderCodeBrand.set(key, []);
+        byOrderCodeBrand.get(key)!.push(item);
+      }
+
+      // Step 4: Also build a code:brand -> items[] index (cross-order, fallback only)
+      const byCodeBrand = new Map<string, typeof allSyncedItems>();
+      for (const item of allSyncedItems) {
+        const key = `${(item.code || "").toLowerCase()}:${(item.brandName || "").toLowerCase()}`;
+        if (!byCodeBrand.has(key)) byCodeBrand.set(key, []);
+        byCodeBrand.get(key)!.push(item);
+      }
+
+      // Track which item IDs have been enriched this run to avoid double-enrichment
+      const enrichedIds = new Set<number>();
+
       for (const rg of rgEntries) {
         const rgItems = (rg.items || []) as Array<Record<string, unknown>>;
         const supplierName = [rg.sup_name || ""].join("").trim();
         const rgId = String(rg.id || "");
         const rgTimestamp = rg.timestamp ? Number(rg.timestamp) : null;
         const rgCurrency = String(rg.currency || "uah");
+        // RG often has an order_id that links to vortexOrderId
+        const rgOrderId = String(rg.order_id || rg.or_id || "");
 
         for (const rgItem of rgItems) {
           const artId = String(rgItem.art_id || "");
           const code = String(rgItem.code || "");
           const brand = String(rgItem.brand || "");
+          const rgItemOrderItemId = String(rgItem.order_item_id || rgItem.item_id || "");
           const supplierTotal = rgItem.price ? String(rgItem.price) : null;
+          const rgQty = rgItem.qty ? Number(rgItem.qty) : null;
 
           if (!artId && !code) continue;
 
-          // Find matching order_items by code + brand
-          const matchConditions = [];
-          if (code) matchConditions.push(eq(orderItems.code, code));
-          if (brand) matchConditions.push(eq(orderItems.brandName, brand));
+          let matched: typeof allSyncedItems[number] | undefined;
 
-          if (matchConditions.length === 0) continue;
-
-          const matchingItems = await db
-            .select({ id: orderItems.id, supplierName: orderItems.supplierName })
-            .from(orderItems)
-            .where(and(...matchConditions))
-            .limit(10);
-
-          for (const mi of matchingItems) {
-            // Only update if not already enriched
-            if (!mi.supplierName) {
-              await db
-                .update(orderItems)
-                .set({
-                  supplierName,
-                  supplierTotal,
-                  supplierCurrency: rgCurrency,
-                  rgId,
-                  rgTimestamp,
-                })
-                .where(eq(orderItems.id, mi.id));
-              rgEnriched++;
+          // Strategy 1: Match by order_item_id (most precise — unique per line)
+          if (rgItemOrderItemId && byOrderItemId.has(rgItemOrderItemId)) {
+            const candidate = byOrderItemId.get(rgItemOrderItemId)!;
+            if (!candidate.supplierName && !enrichedIds.has(candidate.id)) {
+              matched = candidate;
             }
+          }
+
+          // Strategy 2: Match by RG's order_id + code + brand (scoped to one order)
+          if (!matched && rgOrderId) {
+            const key = `${rgOrderId}:${code.toLowerCase()}:${brand.toLowerCase()}`;
+            const candidates = byOrderCodeBrand.get(key) || [];
+            // If multiple items with same code+brand in one order, prefer matching qty
+            if (rgQty != null) {
+              matched = candidates.find(c => !c.supplierName && !enrichedIds.has(c.id) && c.qty === rgQty);
+            }
+            if (!matched) {
+              matched = candidates.find(c => !c.supplierName && !enrichedIds.has(c.id));
+            }
+          }
+
+          // Strategy 3: Fallback — match by code + brand across all synced orders (least precise)
+          if (!matched) {
+            const key = `${code.toLowerCase()}:${brand.toLowerCase()}`;
+            const candidates = byCodeBrand.get(key) || [];
+            if (rgQty != null) {
+              matched = candidates.find(c => !c.supplierName && !enrichedIds.has(c.id) && c.qty === rgQty);
+            }
+            if (!matched) {
+              matched = candidates.find(c => !c.supplierName && !enrichedIds.has(c.id));
+            }
+          }
+
+          if (matched) {
+            await db
+              .update(orderItems)
+              .set({
+                supplierName,
+                supplierTotal,
+                supplierCurrency: rgCurrency,
+                rgId,
+                rgTimestamp,
+              })
+              .where(eq(orderItems.id, matched.id));
+            enrichedIds.add(matched.id);
+            // Mark as enriched in memory too
+            matched.supplierName = supplierName;
+            rgEnriched++;
           }
         }
       }
