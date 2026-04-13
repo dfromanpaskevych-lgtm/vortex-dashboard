@@ -190,3 +190,6 @@
 - [x] Жорсткий таймаут 15 хвилин на кожен чанк (Promise.race)
 - [x] Skip failed chunk і продовжити до наступного (не зупиняти весь процес)
 - [x] Виправити continueRemainingChunks: створювати чанки що ніколи не існували
+- [x] КРИТИЧНИЙ БАГ: Promise.race не вбиває HTTP-запити — додати AbortController у vortexClient.ts
+- [x] Передати AbortSignal через весь ланцюжок: syncChunkWithRetry → syncOrdersInternal → fetchOrdersByDateRange/fetchRgByDateRange → rawPost
+- [x] Тести для нового AbortController таймауту

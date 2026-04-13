@@ -8,9 +8,18 @@ const API_URL = "http://tz4.topaz.crm-vortex.com/front_api";
  * Low-level HTTP POST using Node's built-in http module.
  * Each request creates a fresh connection (no keep-alive pooling)
  * to avoid stale/broken connections with the slow Vortex API.
+ *
+ * Accepts an optional AbortSignal — when aborted, the request is immediately
+ * destroyed so the caller's Promise.race timeout actually kills the connection.
  */
-function rawPost(url: string, body: string, timeoutMs: number): Promise<string> {
+function rawPost(url: string, body: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
+    // If already aborted before we even start, reject immediately
+    if (signal?.aborted) {
+      reject(new Error("AbortError: request aborted before start"));
+      return;
+    }
+
     const parsed = new URL(url);
     const options: http.RequestOptions = {
       hostname: parsed.hostname,
@@ -40,6 +49,17 @@ function rawPost(url: string, body: string, timeoutMs: number): Promise<string> 
       req.destroy(new Error(`Request timeout after ${timeoutMs}ms`));
     });
     req.on("error", reject);
+
+    // Wire AbortSignal: when aborted, destroy the socket immediately
+    if (signal) {
+      const onAbort = () => {
+        req.destroy(new Error("AbortError: chunk timeout — request killed"));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      // Clean up listener when request finishes normally
+      req.on("close", () => signal.removeEventListener("abort", onAbort));
+    }
+
     req.write(body);
     req.end();
   });
@@ -71,20 +91,37 @@ function hashRequest(requestData: Record<string, unknown>, apiKey: string): stri
   return crypto.createHash("sha1").update(joinedDataString, "utf-8").digest("hex");
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("AbortError: sleep aborted"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new Error("AbortError: sleep aborted"));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
 }
 
 /**
  * Make a single API request to Vortex.
  * Uses raw HTTP (no axios) with fresh connections.
  * Timeout: 30s (Vortex API is fast when healthy).
+ * Accepts optional AbortSignal to kill the request immediately on abort.
  */
 async function makeApiRequest(
   method: string,
   methodData: Record<string, unknown>,
-  timeout = 30000
+  timeout = 30000,
+  signal?: AbortSignal
 ): Promise<unknown> {
+  if (signal?.aborted) throw new Error("AbortError: chunk timeout");
+
   const currentTime = Math.floor(Date.now() / 1000);
   const randVal = Math.floor(Math.random() * 90000) + 10000;
 
@@ -103,7 +140,7 @@ async function makeApiRequest(
   requestData.user_agent = "Mozilla/5.0 (Vortex Dashboard)";
 
   const body = JSON.stringify(requestData);
-  const responseText = await rawPost(API_URL, body, timeout);
+  const responseText = await rawPost(API_URL, body, timeout, signal);
 
   try {
     return JSON.parse(responseText);
@@ -117,28 +154,37 @@ async function makeApiRequest(
  * - Up to 5 attempts
  * - Short pauses between retries: 1s, 2s, 4s, 8s
  * - 30s timeout per request (60s for get_order_by_id)
+ * - Accepts optional AbortSignal — aborted immediately on chunk timeout
  */
 async function makeApiRequestWithRetry(
   method: string,
   methodData: Record<string, unknown>,
   maxRetries = 5,
-  timeout = 30000
+  timeout = 30000,
+  signal?: AbortSignal
 ): Promise<unknown> {
   const retryDelays = [1000, 2000, 4000, 8000, 15000];
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Check abort before each attempt
+    if (signal?.aborted) throw new Error("AbortError: chunk timeout");
+
     try {
       console.log(`[VortexAPI] ${method} attempt ${attempt + 1}/${maxRetries}...`);
-      const result = await makeApiRequest(method, methodData, timeout);
+      const result = await makeApiRequest(method, methodData, timeout, signal);
       return result;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
+
+      // If aborted — propagate immediately, don't retry
+      if (errMsg.includes("AbortError")) throw error;
+
       console.warn(`[VortexAPI] ${method} attempt ${attempt + 1}/${maxRetries} FAILED: ${errMsg}`);
 
       if (attempt < maxRetries - 1) {
         const waitTime = retryDelays[attempt] || 15000;
         console.log(`[VortexAPI] Waiting ${waitTime / 1000}s before retry...`);
-        await sleep(waitTime);
+        await sleep(waitTime, signal);
       }
     }
   }
@@ -150,12 +196,13 @@ async function makeApiRequestWithRetry(
  */
 export async function getOrders(
   startTimestamp: number,
-  endTimestamp: number
+  endTimestamp: number,
+  signal?: AbortSignal
 ): Promise<Record<string, unknown>> {
   const result = await makeApiRequestWithRetry("get_orders", {
     start_timestamp: startTimestamp,
     end_timestamp: endTimestamp,
-  });
+  }, 5, 30000, signal);
   return result as Record<string, unknown>;
 }
 
@@ -207,10 +254,14 @@ function validateItem(item: Record<string, unknown>, orderId: string): boolean {
 /**
  * Fetch orders for exactly ONE day.
  * Returns validated, clean order records.
+ * Accepts optional AbortSignal for hard timeout.
  */
 export async function fetchOrdersForDay(
-  date: Date
+  date: Date,
+  signal?: AbortSignal
 ): Promise<Array<Record<string, unknown>>> {
+  if (signal?.aborted) throw new Error("AbortError: chunk timeout");
+
   const dayStart = new Date(date);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(date);
@@ -222,7 +273,7 @@ export async function fetchOrdersForDay(
   const dayStr = date.toISOString().slice(0, 10);
   console.log(`[VortexAPI] Fetching orders for ${dayStr} (ts: ${startTs}-${endTs})`);
 
-  const result = await getOrders(startTs, endTs);
+  const result = await getOrders(startTs, endTs, signal);
   const ordersMap = result.orders as Record<string, unknown> | undefined;
 
   if (!ordersMap || typeof ordersMap !== "object") {
@@ -261,20 +312,24 @@ export async function fetchOrdersForDay(
  * Get RG list (receipts/invoices from suppliers) for a timestamp range.
  * Returns array of RG entries with supplier info.
  * page_size=1000 to minimize number of requests.
+ * Accepts optional AbortSignal for hard timeout.
  */
 export async function getRgList(
   startTimestamp: number,
   endTimestamp: number,
   page = 0,
-  pageSize = 1000
+  pageSize = 1000,
+  signal?: AbortSignal
 ): Promise<Array<Record<string, unknown>>> {
+  if (signal?.aborted) throw new Error("AbortError: chunk timeout");
+
   const result = await makeApiRequestWithRetry("get_rg_list", {
     page,
     page_size: pageSize,
     with_items: true,
     start_timestamp: startTimestamp,
     end_timestamp: endTimestamp,
-  }) as Record<string, unknown>;
+  }, 5, 30000, signal) as Record<string, unknown>;
 
   const items = result.items as Array<Record<string, unknown>> | undefined;
   if (!items || !Array.isArray(items)) {
@@ -288,7 +343,7 @@ export async function getRgList(
   const allItems = [...items];
   if (result.next_page_exists) {
     console.log(`[VortexAPI] get_rg_list: fetching next page...`);
-    const nextItems = await getRgList(startTimestamp, endTimestamp, page + 1, pageSize);
+    const nextItems = await getRgList(startTimestamp, endTimestamp, page + 1, pageSize, signal);
     allItems.push(...nextItems);
   }
 
@@ -297,10 +352,12 @@ export async function getRgList(
 
 /**
  * Fetch all RG entries for a date range, one day at a time.
+ * Accepts optional AbortSignal for hard timeout.
  */
 export async function fetchRgByDateRange(
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  signal?: AbortSignal
 ): Promise<Array<Record<string, unknown>>> {
   const allRg: Array<Record<string, unknown>> = [];
   const current = new Date(startDate);
@@ -310,6 +367,9 @@ export async function fetchRgByDateRange(
   endDay.setHours(23, 59, 59, 999);
 
   while (current <= endDay) {
+    // Check abort at the start of each day
+    if (signal?.aborted) throw new Error("AbortError: chunk timeout");
+
     const dayStart = new Date(current);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(current);
@@ -320,11 +380,13 @@ export async function fetchRgByDateRange(
     const dayStr = current.toISOString().slice(0, 10);
 
     try {
-      const rgEntries = await getRgList(startTs, endTs);
+      const rgEntries = await getRgList(startTs, endTs, 0, 1000, signal);
       allRg.push(...rgEntries);
       console.log(`[VortexAPI] RG for ${dayStr}: ${rgEntries.length} entries`);
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
+      // Propagate abort immediately
+      if (errMsg.includes("AbortError")) throw error;
       console.error(`[VortexAPI] RG FAILED for ${dayStr}: ${errMsg}`);
     }
 
@@ -338,11 +400,13 @@ export async function fetchRgByDateRange(
 /**
  * Fetch orders for a date range, one day at a time.
  * No artificial pauses between days — requests are sequential but immediate.
+ * Accepts optional AbortSignal for hard timeout.
  */
 export async function fetchOrdersByDateRange(
   startDate: Date,
   endDate: Date,
-  onProgress?: (day: string, count: number) => void
+  onProgress?: (day: string, count: number) => void,
+  signal?: AbortSignal
 ): Promise<Array<Record<string, unknown>>> {
   const allOrders: Array<Record<string, unknown>> = [];
   const current = new Date(startDate);
@@ -354,14 +418,19 @@ export async function fetchOrdersByDateRange(
   let dayIndex = 0;
 
   while (current <= endDay) {
+    // Check abort at the start of each day
+    if (signal?.aborted) throw new Error("AbortError: chunk timeout");
+
     const dayStr = current.toISOString().slice(0, 10);
 
     try {
-      const dayOrders = await fetchOrdersForDay(new Date(current));
+      const dayOrders = await fetchOrdersForDay(new Date(current), signal);
       allOrders.push(...dayOrders);
       onProgress?.(dayStr, dayOrders.length);
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
+      // Propagate abort immediately — don't swallow it
+      if (errMsg.includes("AbortError")) throw error;
       console.error(`[VortexAPI] FAILED to fetch ${dayStr}: ${errMsg}`);
       onProgress?.(dayStr, -1);
     }

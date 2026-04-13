@@ -421,7 +421,8 @@ async function syncOrdersInternal(
   syncType: "manual" | "auto" = "manual",
   runId?: string,
   chunkIndex?: number,
-  autoRetried = false
+  autoRetried = false,
+  signal?: AbortSignal
 ): Promise<{ batchId: string; success: boolean; message: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number }> {
   const batchId = nanoid();
   const db = await getDb();
@@ -473,7 +474,7 @@ async function syncOrdersInternal(
     // Fetch from Vortex API day-by-day with pauses
     const fetchedOrders = await fetchOrdersByDateRange(startDate, endDate, (day, count) => {
       console.log(`[Sync] ${day}: ${count >= 0 ? count + " orders" : "FAILED"}`);
-    });
+    }, signal);
 
     console.log(`[Sync] Fetched ${fetchedOrders.length} total valid orders from API`);
 
@@ -654,7 +655,7 @@ async function syncOrdersInternal(
     let rgEnriched = 0;
     try {
       console.log(`[Sync] Fetching RG (supplier receipt) data...`);
-      const rgEntries = await fetchRgByDateRange(startDate, endDate);
+      const rgEntries = await fetchRgByDateRange(startDate, endDate, signal);
       console.log(`[Sync] Got ${rgEntries.length} RG entries, matching to order items...`);
 
       // ===== RG ENRICHMENT — FIXED: match by order_item_id when available, otherwise by vortexOrderId + code + brand =====
@@ -1069,26 +1070,29 @@ async function syncChunkWithRetry(
 
   console.log(`${indent}[ChunkRetry] Trying ${fromStr} — ${toStr} (${totalDays} days, depth=${depth}, attempt=${retryAttempt}/${MAX_AUTO_RETRIES})`);
 
+  // Create AbortController for this chunk — shared by ALL HTTP requests inside syncOrdersInternal.
+  // When the 15-minute timer fires, controller.abort() immediately destroys every active socket.
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => {
+    console.error(`${indent}[ChunkRetry] ⏰ HARD TIMEOUT: aborting chunk ${fromStr} — ${toStr} after ${CHUNK_TIMEOUT_MS / 60000} minutes`);
+    controller.abort();
+  }, CHUNK_TIMEOUT_MS);
+
   let result: { batchId: string; success: boolean; message: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number };
   try {
-    // Hard 15-minute timeout per chunk to prevent indefinite hanging
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Chunk timeout: exceeded ${CHUNK_TIMEOUT_MS / 60000} minutes`)), CHUNK_TIMEOUT_MS)
-    );
-    result = await Promise.race([
-      syncOrdersInternal(0, fromStr, toStr, syncType, runId, chunkIndex, retryAttempt > 0),
-      timeoutPromise,
-    ]);
+    result = await syncOrdersInternal(0, fromStr, toStr, syncType, runId, chunkIndex, retryAttempt > 0, controller.signal);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    result = { batchId: `err-${nanoid(6)}`, success: false, message: errMsg };
-    // If chunk timed out, try to mark the running sync_log as failed
-    if (errMsg.includes("Chunk timeout")) {
-      console.error(`${indent}[ChunkRetry] ⏰ TIMEOUT: ${fromStr} — ${toStr} after ${CHUNK_TIMEOUT_MS / 60000} minutes`);
+    const isTimeout = errMsg.includes("AbortError") || controller.signal.aborted;
+    const displayMsg = isTimeout ? `Chunk timeout: exceeded ${CHUNK_TIMEOUT_MS / 60000} minutes` : errMsg;
+    result = { batchId: `err-${nanoid(6)}`, success: false, message: displayMsg };
+
+    if (isTimeout) {
+      console.error(`${indent}[ChunkRetry] ⏰ TIMEOUT confirmed: ${fromStr} — ${toStr}`);
+      // Try to mark the running sync_log for this chunk as failed
       try {
         const dbTimeout = await getDb();
         if (dbTimeout && runId) {
-          // Find the running sync_log for this chunk and mark it failed
           const runningLogs = await dbTimeout.select().from(syncLogs)
             .where(and(eq(syncLogs.runId, runId), eq(syncLogs.status, "running")));
           for (const log of runningLogs) {
@@ -1106,6 +1110,8 @@ async function syncChunkWithRetry(
         console.error(`${indent}[ChunkRetry] Failed to mark timed-out chunk in DB:`, dbErr);
       }
     }
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 
   if (result.success) {
