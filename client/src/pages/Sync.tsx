@@ -610,6 +610,13 @@ export default function Sync() {
                       </span>
                     </button>
 
+                    {/* Coverage warning */}
+                    {typeof run.coverageWarning === "string" && run.coverageWarning.length > 0 && (
+                      <div className="bg-yellow-50 dark:bg-yellow-900/20 border-t border-yellow-200 dark:border-yellow-800 px-4 py-2 flex items-center gap-2">
+                        <span className="text-yellow-600 dark:text-yellow-400 text-xs font-medium">⚠️ {run.coverageWarning}</span>
+                      </div>
+                    )}
+
                     {/* Expanded chunk list */}
                     {isExpanded && chunks.length > 0 && (
                       <div className="border-t bg-muted/20">

@@ -1050,6 +1050,8 @@ function splitIntoChunks(startDate: Date, endDate: Date): Array<{ from: Date; to
  * Minimum granularity: 1 day. Each attempt creates its own sync_log entry.
  * Returns array of results (may be multiple sub-chunks if splitting occurred).
  */
+const MAX_AUTO_RETRIES = 3;
+
 async function syncChunkWithRetry(
   from: Date,
   to: Date,
@@ -1057,35 +1059,35 @@ async function syncChunkWithRetry(
   depth = 0,
   runId?: string,
   chunkIndex?: number,
-  wasAutoRetried = false
+  retryAttempt = 0
 ): Promise<Array<{ batchId: string; success: boolean; dateFrom: string; dateTo: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number }>> {
-  const fromTs = Math.floor(from.getTime() / 1000);
-  const toTs = Math.floor(to.getTime() / 1000);
   const fromStr = from.toISOString().slice(0, 10);
   const toStr = to.toISOString().slice(0, 10);
   const totalDays = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   const indent = "  ".repeat(depth);
 
-  console.log(`${indent}[ChunkRetry] Trying ${fromStr} — ${toStr} (${totalDays} days, depth=${depth}, autoRetried=${wasAutoRetried})`);
+  console.log(`${indent}[ChunkRetry] Trying ${fromStr} — ${toStr} (${totalDays} days, depth=${depth}, attempt=${retryAttempt}/${MAX_AUTO_RETRIES})`);
 
   let result: { batchId: string; success: boolean; message: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number };
   try {
-    result = await syncOrdersInternal(0, fromStr, toStr, syncType, runId, chunkIndex, wasAutoRetried);
+    result = await syncOrdersInternal(0, fromStr, toStr, syncType, runId, chunkIndex, retryAttempt > 0);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     result = { batchId: `err-${nanoid(6)}`, success: false, message: errMsg };
   }
 
   if (result.success) {
-    console.log(`${indent}[ChunkRetry] ✅ Success: ${fromStr} — ${toStr}`);
+    console.log(`${indent}[ChunkRetry] ✅ Success: ${fromStr} — ${toStr}${retryAttempt > 0 ? ` (after ${retryAttempt} retries)` : ""}`);
     return [{ batchId: result.batchId, success: true, dateFrom: fromStr, dateTo: toStr, ordersProcessed: result.ordersProcessed, itemsProcessed: result.itemsProcessed, newOrders: result.newOrders, modifiedOrders: result.modifiedOrders }];
   }
 
-  // Failed at depth=0 and not yet auto-retried: do ONE automatic retry
-  if (depth === 0 && !wasAutoRetried) {
-    console.warn(`${indent}[ChunkRetry] ⚠️ Auto-retrying once: ${fromStr} — ${toStr}`);
-    await new Promise(r => setTimeout(r, 3000)); // 3s pause before auto-retry
-    return syncChunkWithRetry(from, to, syncType, depth, runId, chunkIndex, true);
+  // Failed at depth=0 and still have auto-retry attempts left: retry up to MAX_AUTO_RETRIES times
+  if (depth === 0 && retryAttempt < MAX_AUTO_RETRIES) {
+    const nextAttempt = retryAttempt + 1;
+    const pauseSec = nextAttempt * 3; // 3s, 6s, 9s progressive backoff
+    console.warn(`${indent}[ChunkRetry] ⚠️ Auto-retry ${nextAttempt}/${MAX_AUTO_RETRIES}: ${fromStr} — ${toStr} (pause ${pauseSec}s)`);
+    await new Promise(r => setTimeout(r, pauseSec * 1000));
+    return syncChunkWithRetry(from, to, syncType, depth, runId, chunkIndex, nextAttempt);
   }
 
   // Failed — can we split further?
@@ -1169,7 +1171,7 @@ export async function cancelChunk(batchId: string): Promise<{ success: boolean; 
 
 /**
  * Retry a specific failed or cancelled chunk by batchId.
- * Creates a new sync run for just this chunk's date range.
+ * After successful retry, continues executing any remaining chunks in the parent run.
  * Can be called even when no sync is currently running.
  */
 export async function retryChunk(batchId: string): Promise<{ success: boolean; message: string; newBatchId?: string }> {
@@ -1197,42 +1199,17 @@ export async function retryChunk(batchId: string): Promise<{ success: boolean; m
   cancelRequested = false;
   (async () => {
     try {
-      await syncOrdersInternal(0, chunk.dateFrom ?? undefined, chunk.dateTo ?? undefined, chunk.syncType ?? "manual", chunk.runId ?? undefined, chunk.chunkIndex ?? undefined, false);
-      // Update parent run stats if runId exists
+      // 1. Retry the failed chunk itself
+      const retryResult = await syncOrdersInternal(0, chunk.dateFrom ?? undefined, chunk.dateTo ?? undefined, chunk.syncType ?? "manual", chunk.runId ?? undefined, chunk.chunkIndex ?? undefined, false);
+
+      // 2. After successful retry, continue remaining chunks in the parent run
+      if (retryResult.success && chunk.runId) {
+        await continueRemainingChunks(chunk.runId, chunk.chunkIndex ?? 0, chunk.syncType ?? "manual");
+      }
+
+      // 3. Update parent run stats
       if (chunk.runId) {
-        const dbUpdate = await getDb();
-        if (dbUpdate) {
-          const allChunks = await dbUpdate.select().from(syncLogs).where(eq(syncLogs.runId, chunk.runId));
-          // For status: use only the LATEST record per chunkIndex (retries replace old failures)
-          const latestByIndex = new Map<number, typeof allChunks[0]>();
-          for (const c of allChunks) {
-            const idx = c.chunkIndex ?? 0;
-            const existing = latestByIndex.get(idx);
-            if (!existing || (c.startedAt && existing.startedAt && new Date(c.startedAt) > new Date(existing.startedAt))) {
-              latestByIndex.set(idx, c);
-            }
-          }
-          const latestChunks = Array.from(latestByIndex.values());
-          const completedChunks = latestChunks.filter(c => c.status === "completed").length;
-          const failedChunks = latestChunks.filter(c => c.status === "failed").length;
-          const cancelledChunks = latestChunks.filter(c => c.status === "cancelled").length;
-          // For stats: sum ALL completed chunks (including retried ones)
-          const completedAll = allChunks.filter(c => c.status === "completed");
-          const totalOrders = completedAll.reduce((s, c) => s + (c.ordersProcessed ?? 0), 0);
-          const totalNew = completedAll.reduce((s, c) => s + (c.newOrders ?? 0), 0);
-          const totalMod = completedAll.reduce((s, c) => s + (c.modifiedOrders ?? 0), 0);
-          const allDone = latestChunks.every(c => c.status !== "running");
-          const finalStatus = failedChunks > 0 ? "failed" : cancelledChunks > 0 ? "cancelled" : "completed";
-          await dbUpdate.update(syncRuns).set({
-            completedChunks,
-            failedChunks,
-            cancelledChunks,
-            ordersProcessed: totalOrders,
-            newOrders: totalNew,
-            modifiedOrders: totalMod,
-            ...(allDone ? { status: finalStatus, completedAt: new Date() } : {}),
-          }).where(eq(syncRuns.runId, chunk.runId));
-        }
+        await updateRunStats(chunk.runId);
       }
     } catch (err) {
       console.error(`[Sync] Retry chunk ${batchId} failed:`, err);
@@ -1242,7 +1219,131 @@ export async function retryChunk(batchId: string): Promise<{ success: boolean; m
     }
   })();
 
-  return { success: true, message: `Retry started for ${chunk.dateFrom} — ${chunk.dateTo}` };
+  return { success: true, message: `Retry started for ${chunk.dateFrom} — ${chunk.dateTo}. Remaining chunks will continue automatically.` };
+}
+
+/**
+ * After a successful retry, continue executing any remaining chunks
+ * that were never created (e.g., server restart killed the for-loop).
+ */
+async function continueRemainingChunks(
+  runId: string,
+  retriedChunkIndex: number,
+  syncType: "manual" | "auto"
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Get the parent run to know the full date range and total planned chunks
+  const [run] = await db.select().from(syncRuns).where(eq(syncRuns.runId, runId)).limit(1);
+  if (!run || !run.dateFrom || !run.dateTo) return;
+
+  // Recalculate ALL planned chunks from the run's full date range
+  const startDate = new Date(run.dateFrom + "T00:00:00.000Z");
+  const endDate = new Date(run.dateTo + "T23:59:59.999Z");
+  const allPlannedChunks = splitIntoChunks(startDate, endDate);
+
+  // Get all existing chunk records for this run
+  const existingLogs = await db.select().from(syncLogs).where(eq(syncLogs.runId, runId));
+
+  // Find the latest record per chunkIndex
+  const latestByIndex = new Map<number, typeof existingLogs[0]>();
+  for (const c of existingLogs) {
+    const idx = c.chunkIndex ?? 0;
+    const existing = latestByIndex.get(idx);
+    if (!existing || (c.startedAt && existing.startedAt && new Date(c.startedAt) > new Date(existing.startedAt))) {
+      latestByIndex.set(idx, c);
+    }
+  }
+
+  // Find chunks that need to be executed (never created, or latest is failed/cancelled)
+  const chunksToRun: Array<{ index: number; from: Date; to: Date }> = [];
+  for (let i = 0; i < allPlannedChunks.length; i++) {
+    const chunkIdx = i + 1; // 1-based
+    if (chunkIdx <= retriedChunkIndex) continue; // Skip already-done chunks (including the just-retried one)
+
+    const latest = latestByIndex.get(chunkIdx);
+    if (!latest || latest.status === "cancelled") {
+      // Never created or was cancelled — needs execution
+      chunksToRun.push({ index: chunkIdx, from: allPlannedChunks[i].from, to: allPlannedChunks[i].to });
+    }
+    // If latest is "completed" — skip (already done)
+    // If latest is "failed" — skip (user can retry it separately)
+  }
+
+  if (chunksToRun.length === 0) {
+    console.log(`[Sync] No remaining chunks to continue for run ${runId}`);
+    return;
+  }
+
+  console.log(`[Sync] Continuing ${chunksToRun.length} remaining chunks for run ${runId}`);
+
+  // Update run status back to running
+  await db.update(syncRuns).set({ status: "running" }).where(eq(syncRuns.runId, runId));
+
+  for (const chunk of chunksToRun) {
+    if (cancelRequested) {
+      console.log(`[Sync] Cancellation requested during continuation — stopping.`);
+      break;
+    }
+
+    const chunkLabel = `${chunk.from.toISOString().slice(0, 10)} — ${chunk.to.toISOString().slice(0, 10)}`;
+    console.log(`[Sync] Continuing chunk ${chunk.index}/${allPlannedChunks.length}: ${chunkLabel}`);
+
+    const subResults = await syncChunkWithRetry(chunk.from, chunk.to, syncType, 0, runId, chunk.index);
+
+    // Update run progress
+    await updateRunStats(runId);
+
+    // Small pause between chunks
+    if (!cancelRequested) {
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+}
+
+/**
+ * Recalculate and update parent run stats from all its chunk records.
+ */
+async function updateRunStats(runId: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const allChunks = await db.select().from(syncLogs).where(eq(syncLogs.runId, runId));
+
+  // Use only the LATEST record per chunkIndex
+  const latestByIndex = new Map<number, typeof allChunks[0]>();
+  for (const c of allChunks) {
+    const idx = c.chunkIndex ?? 0;
+    const existing = latestByIndex.get(idx);
+    if (!existing || (c.startedAt && existing.startedAt && new Date(c.startedAt) > new Date(existing.startedAt))) {
+      latestByIndex.set(idx, c);
+    }
+  }
+  const latestChunks = Array.from(latestByIndex.values());
+  const completedChunks = latestChunks.filter(c => c.status === "completed").length;
+  const failedChunks = latestChunks.filter(c => c.status === "failed").length;
+  const cancelledChunks = latestChunks.filter(c => c.status === "cancelled").length;
+  const runningChunks = latestChunks.filter(c => c.status === "running").length;
+
+  // Sum stats from ALL completed chunks
+  const completedAll = allChunks.filter(c => c.status === "completed");
+  const totalOrders = completedAll.reduce((s, c) => s + (c.ordersProcessed ?? 0), 0);
+  const totalNew = completedAll.reduce((s, c) => s + (c.newOrders ?? 0), 0);
+  const totalMod = completedAll.reduce((s, c) => s + (c.modifiedOrders ?? 0), 0);
+
+  const allDone = runningChunks === 0;
+  const finalStatus = !allDone ? "running" : failedChunks > 0 ? "failed" : cancelledChunks > 0 ? "cancelled" : "completed";
+
+  await db.update(syncRuns).set({
+    completedChunks,
+    failedChunks,
+    cancelledChunks,
+    ordersProcessed: totalOrders,
+    newOrders: totalNew,
+    modifiedOrders: totalMod,
+    ...(allDone ? { status: finalStatus, completedAt: new Date() } : { status: finalStatus }),
+  }).where(eq(syncRuns.runId, runId));
 }
 
 async function _syncOrdersChunkedInner(
@@ -1382,6 +1483,19 @@ async function _syncOrdersChunkedInner(
   const wasCancelled = cancelRequested;
   const finalStatus = wasCancelled ? "cancelled" : failCount > 0 ? "failed" : "completed";
 
+  // Coverage validation: check if all planned date ranges were covered
+  let coverageWarning: string | null = null;
+  const successfulResults = results.filter(r => r.success);
+  if (successfulResults.length < chunks.length) {
+    const coveredRanges = successfulResults.map(r => `${r.dateFrom} — ${r.dateTo}`);
+    const allRanges = chunks.map(c => `${c.from.toISOString().slice(0, 10)} — ${c.to.toISOString().slice(0, 10)}`);
+    const missingRanges = allRanges.filter(r => !coveredRanges.includes(r));
+    if (missingRanges.length > 0) {
+      coverageWarning = `Не покрито ${missingRanges.length} діапазон(ів): ${missingRanges.join(", ")}`;
+      console.warn(`[ChunkedSync] ⚠️ Coverage warning: ${coverageWarning}`);
+    }
+  }
+
   // Update parent run with final stats
   const dbFinal = await getDb();
   if (dbFinal) {
@@ -1399,12 +1513,13 @@ async function _syncOrdersChunkedInner(
       newOrders: totalNew,
       modifiedOrders: totalMod,
       completedAt: new Date(),
+      coverageWarning,
     }).where(eq(syncRuns.runId, runId));
   }
 
   return {
     success: failCount === 0 && !wasCancelled,
-    message: msg,
+    message: msg + (coverageWarning ? ` | ${coverageWarning}` : ""),
     chunks: chunks.length,
     runId,
     results,

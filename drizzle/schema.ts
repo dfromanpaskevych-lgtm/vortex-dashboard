@@ -129,6 +129,7 @@ export const syncRuns = mysqlTable("sync_runs", {
   deletedOrders: int("deletedOrders").default(0),
   startedAt: timestamp("startedAt").defaultNow().notNull(),
   completedAt: timestamp("completedAt"),
+  coverageWarning: text("coverageWarning"),  // Warning if not all date ranges were covered
 });
 
 export type SyncRun = typeof syncRuns.$inferSelect;
