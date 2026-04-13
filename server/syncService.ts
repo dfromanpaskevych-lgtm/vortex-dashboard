@@ -1018,6 +1018,7 @@ export async function resetStaleSyncLogs(): Promise<void> {
 }
 
 const CHUNK_SIZE_DAYS = 7;
+const CHUNK_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes hard timeout per chunk
 
 /**
  * Split a date range into 7-day chunks.
@@ -1070,10 +1071,41 @@ async function syncChunkWithRetry(
 
   let result: { batchId: string; success: boolean; message: string; ordersProcessed?: number; itemsProcessed?: number; newOrders?: number; modifiedOrders?: number };
   try {
-    result = await syncOrdersInternal(0, fromStr, toStr, syncType, runId, chunkIndex, retryAttempt > 0);
+    // Hard 15-minute timeout per chunk to prevent indefinite hanging
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Chunk timeout: exceeded ${CHUNK_TIMEOUT_MS / 60000} minutes`)), CHUNK_TIMEOUT_MS)
+    );
+    result = await Promise.race([
+      syncOrdersInternal(0, fromStr, toStr, syncType, runId, chunkIndex, retryAttempt > 0),
+      timeoutPromise,
+    ]);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     result = { batchId: `err-${nanoid(6)}`, success: false, message: errMsg };
+    // If chunk timed out, try to mark the running sync_log as failed
+    if (errMsg.includes("Chunk timeout")) {
+      console.error(`${indent}[ChunkRetry] ⏰ TIMEOUT: ${fromStr} — ${toStr} after ${CHUNK_TIMEOUT_MS / 60000} minutes`);
+      try {
+        const dbTimeout = await getDb();
+        if (dbTimeout && runId) {
+          // Find the running sync_log for this chunk and mark it failed
+          const runningLogs = await dbTimeout.select().from(syncLogs)
+            .where(and(eq(syncLogs.runId, runId), eq(syncLogs.status, "running")));
+          for (const log of runningLogs) {
+            if (log.chunkIndex === chunkIndex) {
+              await dbTimeout.update(syncLogs).set({
+                status: "failed",
+                errorMessage: `Timeout: exceeded ${CHUNK_TIMEOUT_MS / 60000} minutes`,
+                completedAt: new Date(),
+              }).where(eq(syncLogs.batchId, log.batchId));
+              result.batchId = log.batchId;
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.error(`${indent}[ChunkRetry] Failed to mark timed-out chunk in DB:`, dbErr);
+      }
+    }
   }
 
   if (result.success) {
@@ -1263,12 +1295,15 @@ async function continueRemainingChunks(
     if (chunkIdx <= retriedChunkIndex) continue; // Skip already-done chunks (including the just-retried one)
 
     const latest = latestByIndex.get(chunkIdx);
-    if (!latest || latest.status === "cancelled") {
-      // Never created or was cancelled — needs execution
+    if (!latest) {
+      // Never created — needs execution
+      chunksToRun.push({ index: chunkIdx, from: allPlannedChunks[i].from, to: allPlannedChunks[i].to });
+    } else if (latest.status === "cancelled" || latest.status === "failed") {
+      // Was cancelled or failed — re-execute
       chunksToRun.push({ index: chunkIdx, from: allPlannedChunks[i].from, to: allPlannedChunks[i].to });
     }
     // If latest is "completed" — skip (already done)
-    // If latest is "failed" — skip (user can retry it separately)
+    // If latest is "running" — skip (still in progress)
   }
 
   if (chunksToRun.length === 0) {
