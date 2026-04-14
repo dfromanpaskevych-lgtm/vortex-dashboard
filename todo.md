@@ -196,3 +196,4 @@
 - [x] DB міграції 0014 і 0015 застосовані
 - [x] Передати AbortSignal через весь ланцюжок: syncChunkWithRetry → syncOrdersInternal → fetchOrdersByDateRange/fetchRgByDateRange → rawPost
 - [x] Тести для нового AbortController таймауту
+- [x] Оновити API ключ Vortex: 1bTaa9TePTzS85Nl0zL9ATcYyktNf7ta → rnWXW6G6eBtiqXGvPWy1JJqAZH25iEJQmRcmj3m835nkaXeqqD (server/vortexClient.ts)

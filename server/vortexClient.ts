@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import http from "http";
 
-const API_KEY = "1bTaa9TePTzS85Nl0zL9ATcYyktNf7ta";
+const API_KEY = "rnWXW6G6eBtiqXGvPWy1JJqAZH25iEJQmRcmj3m835nkaXeqqD";
 const API_URL = "http://tz4.topaz.crm-vortex.com/front_api";
 
 /**
