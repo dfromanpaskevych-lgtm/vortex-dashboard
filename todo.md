@@ -191,5 +191,8 @@
 - [x] Skip failed chunk і продовжити до наступного (не зупиняти весь процес)
 - [x] Виправити continueRemainingChunks: створювати чанки що ніколи не існували
 - [x] КРИТИЧНИЙ БАГ: Promise.race не вбиває HTTP-запити — додати AbortController у vortexClient.ts
+- [x] КРИТИЧНИЙ БАГ: Синхронізація зупинялась на липні через DB error VARCHAR overflow (customerPhone VARCHAR(30) → 500, trackNumber VARCHAR(64) → 500, code VARCHAR(100) → 500)
+- [x] Додати truncate() helper у mapOrderToDb/mapItemToDb для захисту від майбутніх overflow
+- [x] DB міграції 0014 і 0015 застосовані
 - [x] Передати AbortSignal через весь ланцюжок: syncChunkWithRetry → syncOrdersInternal → fetchOrdersByDateRange/fetchRgByDateRange → rawPost
 - [x] Тести для нового AbortController таймауту

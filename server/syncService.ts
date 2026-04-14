@@ -42,6 +42,17 @@ export async function getSyncStatus() {
 /**
  * Helper: map raw Vortex order to DB fields.
  */
+/**
+ * Truncate a string to maxLen characters to prevent DB VARCHAR overflow.
+ * Logs a warning when truncation occurs so we can track data quality issues.
+ */
+function truncate(value: string | null | undefined, maxLen: number, field: string): string | null {
+  if (!value) return value ?? null;
+  if (value.length <= maxLen) return value;
+  console.warn(`[Sync] TRUNCATE ${field}: ${value.length} chars → ${maxLen} (value: ${value.slice(0, 80)}...)`);
+  return value.slice(0, maxLen);
+}
+
 function mapOrderToDb(rawOrder: Record<string, unknown>) {
   const vortexOrderId = String(rawOrder.order_id || rawOrder.id || "");
   const sumData = rawOrder.sum as Record<string, unknown> | undefined;
@@ -60,11 +71,11 @@ function mapOrderToDb(rawOrder: Record<string, unknown>) {
     sumEur: sumData?.eur != null ? String(sumData.eur) : null,
     deliveryProvider: deliveryData?.delivery_name ? String(deliveryData.delivery_name) : null,
     deliveryName: deliveryData?.delivery_name ? String(deliveryData.delivery_name) : null,
-    customerPhone: deliveryData?.customer_phone ? String(deliveryData.customer_phone) : null,
-    trackNumber: deliveryData?.track_number ? String(deliveryData.track_number) : null,
-    cityName: deliveryData?.city_name ? String(deliveryData.city_name) : null,
+    customerPhone: truncate(deliveryData?.customer_phone ? String(deliveryData.customer_phone) : null, 500, "customerPhone"),
+    trackNumber: truncate(deliveryData?.track_number ? String(deliveryData.track_number) : null, 500, "trackNumber"),
+    cityName: truncate(deliveryData?.city_name ? String(deliveryData.city_name) : null, 100, "cityName"),
     instanceName: deliveryData?.instance_name ? String(deliveryData.instance_name) : null,
-    paymentName: deliveryData?.payment_name ? String(deliveryData.payment_name) : null,
+    paymentName: truncate(deliveryData?.payment_name ? String(deliveryData.payment_name) : null, 100, "paymentName"),
     codAmount: deliveryData?.cod_amount != null ? String(deliveryData.cod_amount) : null,
     codCurrency: deliveryData?.cod_currency ? String(deliveryData.cod_currency) : null,
     rawJson: rawOrder,
@@ -81,9 +92,9 @@ function mapItemToDb(item: Record<string, unknown>, orderId: number, vortexOrder
   return {
     orderId,
     vortexOrderId,
-    orderItemId: String(item.order_item_id || ""),
-    code: String(item.code || ""),
-    brandName: String(item.brand_name || ""),
+    orderItemId: truncate(String(item.order_item_id || ""), 32, "orderItemId"),
+    code: truncate(String(item.code || ""), 500, "code"),
+    brandName: truncate(String(item.brand_name || ""), 100, "brandName"),
     description: String(item.description || "").trim(),
     status: String(item.status || ""),
     whName: item.wh_name ? String(item.wh_name) : null,
