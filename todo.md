@@ -197,3 +197,4 @@
 - [x] Передати AbortSignal через весь ланцюжок: syncChunkWithRetry → syncOrdersInternal → fetchOrdersByDateRange/fetchRgByDateRange → rawPost
 - [x] Тести для нового AbortController таймауту
 - [x] Оновити API ключ Vortex: 1bTaa9TePTzS85Nl0zL9ATcYyktNf7ta → rnWXW6G6eBtiqXGvPWy1JJqAZH25iEJQmRcmj3m835nkaXeqqD (server/vortexClient.ts)
+- [x] Авто-синхронізація: змінити час з 00:00 на 02:00 Київ (UTC+3), діапазон з "поточний місяць" на "останні 30 днів"

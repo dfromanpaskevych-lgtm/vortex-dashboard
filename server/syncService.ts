@@ -871,40 +871,46 @@ export async function syncOrders(
   }
 }
 
-// Scheduled sync - runs daily at 00:00 Kyiv time (UTC+3)
+// Scheduled sync - runs daily at 02:00 Kyiv time (UTC+3)
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * Returns milliseconds until next 00:00 Kyiv time (UTC+3).
+ * Returns milliseconds until next 02:00 Kyiv time (UTC+3).
  */
-function msUntilMidnightKyiv(): number {
+function msUntil2amKyiv(): number {
   const now = new Date();
   // Kyiv is UTC+3
   const kyivOffset = 3 * 60 * 60 * 1000;
   const kyivNow = new Date(now.getTime() + kyivOffset);
-  const nextMidnight = new Date(kyivNow);
-  nextMidnight.setUTCHours(0, 0, 0, 0);
-  nextMidnight.setUTCDate(nextMidnight.getUTCDate() + 1);
-  return nextMidnight.getTime() - kyivNow.getTime();
+  // Next 02:00 Kyiv = 02:00 UTC+3 = 23:00 UTC previous day
+  const next2am = new Date(kyivNow);
+  next2am.setUTCHours(2, 0, 0, 0); // 02:00 in Kyiv local = UTC+3 offset applied
+  // If 02:00 today has already passed, move to tomorrow
+  if (next2am.getTime() <= kyivNow.getTime()) {
+    next2am.setUTCDate(next2am.getUTCDate() + 1);
+  }
+  return next2am.getTime() - kyivNow.getTime();
 }
 
 export function startScheduledSync() {
   if (syncTimeout) return;
 
   const scheduleNext = () => {
-    const delay = msUntilMidnightKyiv();
+    const delay = msUntil2amKyiv();
     const nextRun = new Date(Date.now() + delay);
-    console.log(`[Sync] Next auto-sync scheduled at ${nextRun.toISOString()} (Kyiv 00:00)`);
+    console.log(`[Sync] Next auto-sync scheduled at ${nextRun.toISOString()} (Kyiv 02:00)`);
     syncTimeout = setTimeout(async () => {
       syncTimeout = null;
-      console.log("[Sync] Auto daily sync triggered (00:00 Kyiv)");
+      console.log("[Sync] Auto daily sync triggered (02:00 Kyiv)");
       try {
-        // Sync entire current month: from 1st of current month (Kyiv time) to today
+        // Sync last 30 days: from today-30 to today (Kyiv time)
         const nowKyiv = new Date(Date.now() + 3 * 60 * 60 * 1000); // UTC+3
-        const monthStartStr = `${nowKyiv.getUTCFullYear()}-${String(nowKyiv.getUTCMonth() + 1).padStart(2, "0")}-01`;
         const todayStr = nowKyiv.toISOString().slice(0, 10);
-        console.log(`[Sync] Auto-sync: current month ${monthStartStr} — ${todayStr}`);
-        await syncOrdersChunked(0, monthStartStr, todayStr, "auto"); // sync current month via chunks
+        const thirtyDaysAgo = new Date(nowKyiv);
+        thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
+        const fromStr = thirtyDaysAgo.toISOString().slice(0, 10);
+        console.log(`[Sync] Auto-sync: last 30 days ${fromStr} — ${todayStr}`);
+        await syncOrdersChunked(0, fromStr, todayStr, "auto"); // sync last 30 days via chunks
       } catch (error) {
         console.error("[Sync] Auto sync error:", error);
       }
@@ -929,7 +935,7 @@ export function stopScheduledSync() {
  */
 export function getNextScheduledSyncTime(): string | null {
   if (!syncTimeout) return null;
-  const delay = msUntilMidnightKyiv();
+  const delay = msUntil2amKyiv();
   return new Date(Date.now() + delay).toISOString();
 }
 
