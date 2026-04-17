@@ -64,22 +64,24 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  // Reset any stale 'running' sync logs from previous server instances
-  try {
-    await resetStaleSyncLogs();
-  } catch (e) {
-    console.warn("[Startup] Could not reset stale sync logs:", e);
-  }
-
-  // Resume any incomplete sync runs from previous server instances
-  try {
-    await resumeIncompleteSync();
-  } catch (e) {
-    console.warn("[Startup] Could not resume incomplete syncs:", e);
-  }
-
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+
+    // Reset stale sync logs and resume incomplete syncs AFTER server is listening
+    // This prevents blocking the server startup on port binding
+    setTimeout(async () => {
+      try {
+        await resetStaleSyncLogs();
+      } catch (e) {
+        console.warn("[Startup] Could not reset stale sync logs:", e);
+      }
+
+      try {
+        await resumeIncompleteSync();
+      } catch (e) {
+        console.warn("[Startup] Could not resume incomplete syncs:", e);
+      }
+    }, 2000); // 2 second delay to ensure server is fully ready
   });
 }
 
