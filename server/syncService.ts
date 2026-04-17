@@ -1035,6 +1035,122 @@ export async function resetStaleSyncLogs(): Promise<void> {
   }
 }
 
+/**
+ * On server startup, resume any incomplete sync runs.
+ * A run is incomplete if it has status='running' or if it has uncompleted chunks.
+ */
+export async function resumeIncompleteSync(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const { eq, and } = await import("drizzle-orm");
+
+  // Find all runs that are still 'running' (should have been reset to 'failed' by now, but check anyway)
+  const runningRuns = await db
+    .select()
+    .from(syncRuns)
+    .where(eq(syncRuns.status, "running"))
+    .limit(10);
+
+  if (runningRuns.length === 0) {
+    return; // No incomplete runs
+  }
+
+  console.log(`[Startup] Found ${runningRuns.length} incomplete sync run(s), attempting to resume...`);
+
+  for (const run of runningRuns) {
+    try {
+      if (!run.dateFrom || !run.dateTo) {
+        console.warn(`[Startup] Skipping run ${run.runId}: missing date range`);
+        continue;
+      }
+
+      // Get all chunks for this run
+      const chunks = await db
+        .select()
+        .from(syncLogs)
+        .where(eq(syncLogs.runId, run.runId));
+
+      if (chunks.length === 0) {
+        console.warn(`[Startup] Skipping run ${run.runId}: no chunks found`);
+        continue;
+      }
+
+      // Find the latest record per chunkIndex
+      const latestByIndex = new Map<number, typeof chunks[0]>();
+      for (const c of chunks) {
+        const idx = c.chunkIndex ?? 0;
+        const existing = latestByIndex.get(idx);
+        if (!existing || (c.startedAt && existing.startedAt && new Date(c.startedAt) > new Date(existing.startedAt))) {
+          latestByIndex.set(idx, c);
+        }
+      }
+
+      // Check if all chunks are completed
+      const allCompleted = Array.from(latestByIndex.values()).every(c => c.status === "completed");
+      if (allCompleted) {
+        // Mark run as completed
+        await db.update(syncRuns).set({ status: "completed", completedAt: new Date() }).where(eq(syncRuns.runId, run.runId));
+        console.log(`[Startup] Run ${run.runId} all chunks completed, marking as done`);
+        continue;
+      }
+
+      // Find chunks that need to be executed (failed, cancelled, or never created)
+      const startDate = new Date(run.dateFrom + "T00:00:00.000Z");
+      const endDate = new Date(run.dateTo + "T23:59:59.999Z");
+      const allPlannedChunks = splitIntoChunks(startDate, endDate);
+
+      const chunksToRun: Array<{ index: number; from: Date; to: Date }> = [];
+      for (let i = 0; i < allPlannedChunks.length; i++) {
+        const chunkIdx = i + 1; // 1-based
+        const latest = latestByIndex.get(chunkIdx);
+        if (!latest) {
+          // Never created
+          chunksToRun.push({ index: chunkIdx, from: allPlannedChunks[i].from, to: allPlannedChunks[i].to });
+        } else if (latest.status === "failed" || latest.status === "cancelled") {
+          // Failed or cancelled — re-execute
+          chunksToRun.push({ index: chunkIdx, from: allPlannedChunks[i].from, to: allPlannedChunks[i].to });
+        }
+        // If 'completed' or 'running' — skip
+      }
+
+      if (chunksToRun.length === 0) {
+        console.log(`[Startup] Run ${run.runId} has no incomplete chunks, marking as completed`);
+        await db.update(syncRuns).set({ status: "completed", completedAt: new Date() }).where(eq(syncRuns.runId, run.runId));
+        continue;
+      }
+
+      console.log(`[Startup] Resuming run ${run.runId} with ${chunksToRun.length}/${allPlannedChunks.length} incomplete chunks`);
+
+      // Resume execution
+      isSyncing = true;
+      for (const chunk of chunksToRun) {
+        if (cancelRequested) break;
+        const chunkLabel = `${chunk.from.toISOString().slice(0, 10)} — ${chunk.to.toISOString().slice(0, 10)}`;
+        console.log(`[Startup] Resuming chunk ${chunk.index}/${allPlannedChunks.length}: ${chunkLabel}`);
+        await syncChunkWithRetry(chunk.from, chunk.to, run.syncType, 0, run.runId, chunk.index);
+        await updateRunStats(run.runId);
+        // Small pause between chunks
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      isSyncing = false;
+
+      // Final update
+      await updateRunStats(run.runId);
+      console.log(`[Startup] Resumed run ${run.runId} completed`);
+    } catch (error) {
+      console.error(`[Startup] Error resuming run ${run.runId}:`, error);
+    }
+  }
+}
+
+/**
+ * Helper: split date range into chunks (used by both sync and resume logic).
+ */
+export function splitIntoChunksForResume(startDate: Date, endDate: Date): Array<{ from: Date; to: Date }> {
+  return splitIntoChunks(startDate, endDate);
+}
+
 const CHUNK_SIZE_DAYS = 7;
 const CHUNK_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes hard timeout per chunk
 

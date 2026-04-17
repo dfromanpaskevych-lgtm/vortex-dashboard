@@ -8,7 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleExcelExport } from "../exportExcel";
-import { resetStaleSyncLogs } from "../syncService";
+import { resetStaleSyncLogs, resumeIncompleteSync } from "../syncService";
 import { apiRouter } from "../apiRoutes";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -69,6 +69,13 @@ async function startServer() {
     await resetStaleSyncLogs();
   } catch (e) {
     console.warn("[Startup] Could not reset stale sync logs:", e);
+  }
+
+  // Resume any incomplete sync runs from previous server instances
+  try {
+    await resumeIncompleteSync();
+  } catch (e) {
+    console.warn("[Startup] Could not resume incomplete syncs:", e);
   }
 
   server.listen(port, () => {

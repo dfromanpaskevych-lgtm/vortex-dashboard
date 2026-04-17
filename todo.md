@@ -198,3 +198,4 @@
 - [x] Тести для нового AbortController таймауту
 - [x] Оновити API ключ Vortex: 1bTaa9TePTzS85Nl0zL9ATcYyktNf7ta → rnWXW6G6eBtiqXGvPWy1JJqAZH25iEJQmRcmj3m835nkaXeqqD (server/vortexClient.ts)
 - [x] Авто-синхронізація: змінити час з 00:00 на 02:00 Київ (UTC+3), діапазон з "поточний місяць" на "останні 30 днів"
+- [x] БАГ: Синхронізація зупинилась на чанку 1/5 під час авто-синху о 02:00. Додано resumeIncompleteSync() яка запускається при старті сервера і продовжує незавершені синхронізації
