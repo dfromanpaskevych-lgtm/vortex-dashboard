@@ -8,16 +8,34 @@ export type TrpcContext = {
   user: User | null;
 };
 
+// Single-user / local-deploy mode (Railway, self-host).
+// When DISABLE_AUTH=true, every request is treated as an admin — skips OAuth.
+const STUB_ADMIN: User = {
+  id: 0,
+  openId: "stub-admin",
+  name: "Admin",
+  email: null,
+  loginMethod: null,
+  role: "admin",
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+  lastSignedIn: new Date(0),
+};
+
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
   let user: User | null = null;
 
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    // Authentication is optional for public procedures.
-    user = null;
+  if (process.env.DISABLE_AUTH === "true") {
+    user = STUB_ADMIN;
+  } else {
+    try {
+      user = await sdk.authenticateRequest(opts.req);
+    } catch (error) {
+      // Authentication is optional for public procedures.
+      user = null;
+    }
   }
 
   return {
