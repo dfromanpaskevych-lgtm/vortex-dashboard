@@ -9,5 +9,12 @@
     "restartPolicyMaxRetries": 5,
     "healthcheckPath": "/healthz",
     "healthcheckTimeout": 30
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "DISABLE_AUTH": "true"
+      }
+    }
   }
 }
