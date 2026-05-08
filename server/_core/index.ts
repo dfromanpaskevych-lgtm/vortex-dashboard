@@ -73,18 +73,14 @@ async function startServer() {
 
     // Reset stale sync logs and resume incomplete syncs AFTER server is listening
     // This prevents blocking the server startup on port binding
-    setTimeout(async () => {
-      try {
-        await resetStaleSyncLogs();
-      } catch (e) {
+    setTimeout(() => {
+      resetStaleSyncLogs().catch(e => {
         console.warn("[Startup] Could not reset stale sync logs:", e);
-      }
+      });
 
-      try {
-        await resumeIncompleteSync();
-      } catch (e) {
+      resumeIncompleteSync().catch(e => {
         console.warn("[Startup] Could not resume incomplete syncs:", e);
-      }
+      });
     }, 2000); // 2 second delay to ensure server is fully ready
   });
 }
